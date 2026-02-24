@@ -1,0 +1,22 @@
+package ru.sapa.gadalka_backend.api;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import ru.sapa.gadalka_backend.api.dto.TelegramAuthRequest;
+import ru.sapa.gadalka_backend.service.TelegramAuthService;
+
+@RestController
+@RequestMapping("/api/auth")
+@RequiredArgsConstructor
+public class AuthController {
+
+    private final TelegramAuthService telegramAuthService;
+
+    @PostMapping("/telegram")
+    public String authenticate(@RequestBody TelegramAuthRequest request) {
+        return telegramAuthService.authenticate(request.getInitData());
+    }
+}
