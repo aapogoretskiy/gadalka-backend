@@ -3,41 +3,52 @@ package ru.sapa.gadalka_backend.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import ru.sapa.gadalka_backend.api.dto.TelegramAuthResponse;
 import ru.sapa.gadalka_backend.api.dto.TelegramUserDto;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.mapper.UserMapper;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class TelegramAuthService {
 
+    private final UserMapper userMapper;
+    private final JwtService jwtService;
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
 
-    private static final String BOT_TOKEN = "TOKEN_HERE";
+    @Value("${telegram.bot.token}")
+    private String botToken;
 
-    public String authenticate(String initData) {
+    @Value("${telegram.auth.enable}")
+    private boolean authEnabled;
+
+    public TelegramAuthResponse authenticate(String initData) {
         Map<String, String> data = parseInitData(initData);
 
         String receivedHash = data.remove("hash");
 
-        if (!isValid(data, receivedHash)) {
+        if (authEnabled && !isValid(data, receivedHash)) {
             throw new RuntimeException("Invalid Telegram auth data");
         }
 
         try {
             String userJson = data.get("user");
 
-            TelegramUserDto telegramUser =
-                    objectMapper.readValue(userJson, TelegramUserDto.class);
+            TelegramUserDto telegramUser = objectMapper.readValue(userJson, TelegramUserDto.class);
 
             User user = userRepository.findByTelegramId(telegramUser.getId())
                     .orElseGet(() -> userRepository.save(
@@ -52,7 +63,11 @@ public class TelegramAuthService {
             log.info("Authenticated telegram user: id={}, telegramId={}",
                     user.getId(), user.getTelegramId());
 
-            return UUID.randomUUID().toString();
+            String token = jwtService.generateToken(String.valueOf(user.getId()));
+            return TelegramAuthResponse.builder()
+                    .user(userMapper.toDto(user))
+                    .jwtToken(token)
+                    .build();
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse Telegram user JSON", e);
@@ -82,11 +97,9 @@ public class TelegramAuthService {
 
             String dataCheckString = String.join("\n", sorted);
 
-            byte[] secretKey = hmacSha256("WebAppData".getBytes(StandardCharsets.UTF_8),
-                    BOT_TOKEN.getBytes(StandardCharsets.UTF_8));
+            byte[] secretKey = hmacSha256("WebAppData".getBytes(StandardCharsets.UTF_8), botToken.getBytes(StandardCharsets.UTF_8));
 
-            byte[] calculatedHash = hmacSha256(secretKey,
-                    dataCheckString.getBytes(StandardCharsets.UTF_8));
+            byte[] calculatedHash = hmacSha256(secretKey, dataCheckString.getBytes(StandardCharsets.UTF_8));
 
             String calculatedHex = bytesToHex(calculatedHash);
 
