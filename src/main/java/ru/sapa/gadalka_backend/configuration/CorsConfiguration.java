@@ -8,11 +8,11 @@ import org.springframework.web.filter.CorsFilter;
 import java.util.List;
 
 @Configuration
-public class CorsConfig {
+public class CorsConfiguration {
 
     @Bean
     public CorsFilter corsFilter() {
-        CorsConfiguration config = new CorsConfiguration();
+        org.springframework.web.cors.CorsConfiguration config = new org.springframework.web.cors.CorsConfiguration();
         config.setAllowedOriginPatterns(List.of("*"));
         config.setAllowedMethods(List.of("*"));
         config.setAllowedHeaders(List.of("*"));
