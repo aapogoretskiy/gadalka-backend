@@ -19,7 +19,7 @@ import ru.sapa.gadalka_backend.service.UserProfileService;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/user-profiles")
+@RequestMapping("/api/user-profiles")
 @Tag(name = "Профиль пользователя", description = "Контроллер для управления профилем пользователя (CRUD)")
 public class UserProfileController {
 
