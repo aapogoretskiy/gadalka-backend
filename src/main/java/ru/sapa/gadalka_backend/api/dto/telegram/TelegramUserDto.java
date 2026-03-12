@@ -1,4 +1,4 @@
-package ru.sapa.gadalka_backend.api.dto;
+package ru.sapa.gadalka_backend.api.dto.telegram;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;

@@ -1,4 +1,4 @@
-package ru.sapa.gadalka_backend.api.dto;
+package ru.sapa.gadalka_backend.api.dto.telegram;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;

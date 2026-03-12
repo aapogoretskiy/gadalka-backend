@@ -1,7 +1,7 @@
 package ru.sapa.gadalka_backend.mapper;
 
 import org.springframework.stereotype.Component;
-import ru.sapa.gadalka_backend.api.dto.TelegramUserDto;
+import ru.sapa.gadalka_backend.api.dto.telegram.TelegramUserDto;
 import ru.sapa.gadalka_backend.domain.User;
 
 @Component

@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
-import ru.sapa.gadalka_backend.api.dto.TelegramAuthResponse;
+import ru.sapa.gadalka_backend.api.dto.telegram.TelegramAuthResponse;
 import ru.sapa.gadalka_backend.service.TelegramAuthService;
 
 @RestController

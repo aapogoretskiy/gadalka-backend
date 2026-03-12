@@ -27,7 +27,7 @@ public class DailyCardService {
         DailyCard dailyCard = dailyCardRepository.findByUserIdAndDate(userId, today)
                 .orElseGet(() -> createDailyCard(userId, today));
 
-        return cardMapper.toDto(dailyCard);
+        return cardMapper.toDailyCardDto(dailyCard);
     }
 
     private DailyCard createDailyCard(Long userId, LocalDate today) {
