@@ -7,7 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.sapa.gadalka_backend.api.dto.TelegramUserDto;
+import ru.sapa.gadalka_backend.api.dto.telegram.TelegramUserDto;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.service.UserService;
 
