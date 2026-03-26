@@ -1,0 +1,704 @@
+[
+  {
+    "name": "Шут",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Новый путь, свобода, спонтанность.",
+    "advice": "Не бойтесь начать с нуля.",
+    "imageUrl": null
+  },
+  {
+    "name": "Маг",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Сила воли и возможности.",
+    "advice": "Действуйте уверенно.",
+    "imageUrl": null
+  },
+  {
+    "name": "Жрица",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Интуиция и тайные знания.",
+    "advice": "Прислушайтесь к себе.",
+    "imageUrl": null
+  },
+  {
+    "name": "Императрица",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Рост, забота, изобилие.",
+    "advice": "Развивайте и создавайте.",
+    "imageUrl": null
+  },
+  {
+    "name": "Император",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Структура и контроль.",
+    "advice": "Берите ответственность.",
+    "imageUrl": null
+  },
+  {
+    "name": "Иерофант",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Традиции и знания.",
+    "advice": "Следуйте проверенному пути.",
+    "imageUrl": null
+  },
+  {
+    "name": "Влюблённые",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Выбор и отношения.",
+    "advice": "Слушайте сердце.",
+    "imageUrl": null
+  },
+  {
+    "name": "Колесница",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Движение вперёд.",
+    "advice": "Контролируйте ситуацию.",
+    "imageUrl": null
+  },
+  {
+    "name": "Сила",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Внутренняя мощь.",
+    "advice": "Проявите терпение.",
+    "imageUrl": null
+  },
+  {
+    "name": "Отшельник",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Поиск истины.",
+    "advice": "Останьтесь наедине с собой.",
+    "imageUrl": null
+  },
+  {
+    "name": "Колесо Фортуны",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Перемены и судьба.",
+    "advice": "Примите изменения.",
+    "imageUrl": null
+  },
+  {
+    "name": "Справедливость",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Баланс и честность.",
+    "advice": "Будьте объективны.",
+    "imageUrl": null
+  },
+  {
+    "name": "Повешенный",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Пауза и переосмысление.",
+    "advice": "Посмотрите под другим углом.",
+    "imageUrl": null
+  },
+  {
+    "name": "Смерть",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Трансформация.",
+    "advice": "Отпустите старое.",
+    "imageUrl": null
+  },
+  {
+    "name": "Умеренность",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Гармония.",
+    "advice": "Соблюдайте баланс.",
+    "imageUrl": null
+  },
+  {
+    "name": "Дьявол",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Зависимости и искушения.",
+    "advice": "Освободитесь от ограничений.",
+    "imageUrl": null
+  },
+  {
+    "name": "Башня",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Резкие перемены и разрушения.",
+    "advice": "Примите перемены.",
+    "imageUrl": null
+  },
+  {
+    "name": "Звезда",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Надежда и вдохновение.",
+    "advice": "Верьте в лучшее.",
+    "imageUrl": null
+  },
+  {
+    "name": "Луна",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Иллюзии и страхи.",
+    "advice": "Будьте осторожны.",
+    "imageUrl": null
+  },
+  {
+    "name": "Солнце",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Радость и успех.",
+    "advice": "Наслаждайтесь жизнью.",
+    "imageUrl": null
+  },
+  {
+    "name": "Суд",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Пробуждение и решение.",
+    "advice": "Сделайте важный шаг.",
+    "imageUrl": null
+  },
+  {
+    "name": "Мир",
+    "arcanaType": "MAJOR",
+    "suit": null,
+    "rank": null,
+    "meaning": "Завершение и гармония.",
+    "advice": "Примите результат.",
+    "imageUrl": null
+  },
+  {
+    "name": "Туз Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "ACE",
+    "meaning": "Начало энергии и вдохновения.",
+    "advice": "Действуйте сейчас.",
+    "imageUrl": null
+  },
+  {
+    "name": "Двойка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "TWO",
+    "meaning": "Планирование и выбор.",
+    "advice": "Смотрите вперёд.",
+    "imageUrl": null
+  },
+  {
+    "name": "Тройка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "THREE",
+    "meaning": "Рост и развитие.",
+    "advice": "Расширяйте горизонты.",
+    "imageUrl": null
+  },
+  {
+    "name": "Четвёрка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "FOUR",
+    "meaning": "Праздник и стабильность.",
+    "advice": "Отдохните.",
+    "imageUrl": null
+  },
+  {
+    "name": "Пятёрка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "FIVE",
+    "meaning": "Конфликты.",
+    "advice": "Не ввязывайтесь в споры.",
+    "imageUrl": null
+  },
+  {
+    "name": "Шестёрка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "SIX",
+    "meaning": "Победа.",
+    "advice": "Продолжайте идти вперёд.",
+    "imageUrl": null
+  },
+  {
+    "name": "Семёрка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "SEVEN",
+    "meaning": "Защита позиции.",
+    "advice": "Отстаивайте себя.",
+    "imageUrl": null
+  },
+  {
+    "name": "Восьмёрка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "EIGHT",
+    "meaning": "Скорость и новости.",
+    "advice": "Будьте готовы к изменениям.",
+    "imageUrl": null
+  },
+  {
+    "name": "Девятка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "NINE",
+    "meaning": "Выносливость.",
+    "advice": "Не сдавайтесь.",
+    "imageUrl": null
+  },
+  {
+    "name": "Десятка Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "TEN",
+    "meaning": "Перегрузка.",
+    "advice": "Снимите лишнюю нагрузку.",
+    "imageUrl": null
+  },
+  {
+    "name": "Паж Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "PAGE",
+    "meaning": "Идея и энтузиазм.",
+    "advice": "Исследуйте новое.",
+    "imageUrl": null
+  },
+  {
+    "name": "Рыцарь Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "KNIGHT",
+    "meaning": "Импульсивность.",
+    "advice": "Контролируйте действия.",
+    "imageUrl": null
+  },
+  {
+    "name": "Королева Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "QUEEN",
+    "meaning": "Харизма.",
+    "advice": "Будьте уверены.",
+    "imageUrl": null
+  },
+  {
+    "name": "Король Жезлов",
+    "arcanaType": "MINOR",
+    "suit": "WANDS",
+    "rank": "KING",
+    "meaning": "Лидерство.",
+    "advice": "Ведите за собой.",
+    "imageUrl": null
+  },
+  {
+    "name": "Туз Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "ACE",
+    "meaning": "Любовь и чувства.",
+    "advice": "Откройтесь эмоциям.",
+    "imageUrl": null
+  },
+  {
+    "name": "Двойка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "TWO",
+    "meaning": "Союз.",
+    "advice": "Доверяйте партнёру.",
+    "imageUrl": null
+  },
+  {
+    "name": "Тройка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "THREE",
+    "meaning": "Радость.",
+    "advice": "Празднуйте.",
+    "imageUrl": null
+  },
+  {
+    "name": "Четвёрка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "FOUR",
+    "meaning": "Скука.",
+    "advice": "Оглянитесь вокруг.",
+    "imageUrl": null
+  },
+  {
+    "name": "Пятёрка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "FIVE",
+    "meaning": "Потеря.",
+    "advice": "Не зацикливайтесь.",
+    "imageUrl": null
+  },
+  {
+    "name": "Шестёрка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "SIX",
+    "meaning": "Ностальгия.",
+    "advice": "Вспомните прошлое.",
+    "imageUrl": null
+  },
+  {
+    "name": "Семёрка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "SEVEN",
+    "meaning": "Иллюзии.",
+    "advice": "Будьте реалистичны.",
+    "imageUrl": null
+  },
+  {
+    "name": "Восьмёрка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "EIGHT",
+    "meaning": "Уход.",
+    "advice": "Идите дальше.",
+    "imageUrl": null
+  },
+  {
+    "name": "Девятка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "NINE",
+    "meaning": "Желания.",
+    "advice": "Наслаждайтесь.",
+    "imageUrl": null
+  },
+  {
+    "name": "Десятка Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "TEN",
+    "meaning": "Счастье.",
+    "advice": "Цените близких.",
+    "imageUrl": null
+  },
+  {
+    "name": "Паж Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "PAGE",
+    "meaning": "Мечтательность.",
+    "advice": "Следуйте за вдохновением.",
+    "imageUrl": null
+  },
+  {
+    "name": "Рыцарь Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "KNIGHT",
+    "meaning": "Романтика.",
+    "advice": "Действуйте мягко.",
+    "imageUrl": null
+  },
+  {
+    "name": "Королева Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "QUEEN",
+    "meaning": "Чувствительность.",
+    "advice": "Доверяйте сердцу.",
+    "imageUrl": null
+  },
+  {
+    "name": "Король Кубков",
+    "arcanaType": "MINOR",
+    "suit": "CUPS",
+    "rank": "KING",
+    "meaning": "Контроль эмоций.",
+    "advice": "Сохраняйте баланс.",
+    "imageUrl": null
+  },
+  {
+    "name": "Туз Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "ACE",
+    "meaning": "Истина.",
+    "advice": "Думайте ясно.",
+    "imageUrl": null
+  },
+  {
+    "name": "Двойка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "TWO",
+    "meaning": "Выбор.",
+    "advice": "Не избегайте решения.",
+    "imageUrl": null
+  },
+  {
+    "name": "Тройка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "THREE",
+    "meaning": "Боль.",
+    "advice": "Примите эмоции.",
+    "imageUrl": null
+  },
+  {
+    "name": "Четвёрка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "FOUR",
+    "meaning": "Отдых.",
+    "advice": "Возьмите паузу.",
+    "imageUrl": null
+  },
+  {
+    "name": "Пятёрка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "FIVE",
+    "meaning": "Конфликт.",
+    "advice": "Избегайте разрушений.",
+    "imageUrl": null
+  },
+  {
+    "name": "Шестёрка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "SIX",
+    "meaning": "Переход.",
+    "advice": "Двигайтесь дальше.",
+    "imageUrl": null
+  },
+  {
+    "name": "Семёрка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "SEVEN",
+    "meaning": "Обман.",
+    "advice": "Будьте внимательны.",
+    "imageUrl": null
+  },
+  {
+    "name": "Восьмёрка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "EIGHT",
+    "meaning": "Ограничения.",
+    "advice": "Освободитесь.",
+    "imageUrl": null
+  },
+  {
+    "name": "Девятка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "NINE",
+    "meaning": "Тревога.",
+    "advice": "Не накручивайте себя.",
+    "imageUrl": null
+  },
+  {
+    "name": "Десятка Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "TEN",
+    "meaning": "Конец.",
+    "advice": "Примите завершение.",
+    "imageUrl": null
+  },
+  {
+    "name": "Паж Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "PAGE",
+    "meaning": "Любопытство.",
+    "advice": "Учитесь.",
+    "imageUrl": null
+  },
+  {
+    "name": "Рыцарь Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "KNIGHT",
+    "meaning": "Решительность.",
+    "advice": "Действуйте быстро.",
+    "imageUrl": null
+  },
+  {
+    "name": "Королева Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "QUEEN",
+    "meaning": "Чёткость.",
+    "advice": "Будьте честны.",
+    "imageUrl": null
+  },
+  {
+    "name": "Король Мечей",
+    "arcanaType": "MINOR",
+    "suit": "SWORDS",
+    "rank": "KING",
+    "meaning": "Логика.",
+    "advice": "Думайте рационально.",
+    "imageUrl": null
+  },
+  {
+    "name": "Туз Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "ACE",
+    "meaning": "Возможность.",
+    "advice": "Используйте шанс.",
+    "imageUrl": null
+  },
+  {
+    "name": "Двойка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "TWO",
+    "meaning": "Баланс.",
+    "advice": "Жонглируйте задачами.",
+    "imageUrl": null
+  },
+  {
+    "name": "Тройка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "THREE",
+    "meaning": "Работа в команде.",
+    "advice": "Сотрудничайте.",
+    "imageUrl": null
+  },
+  {
+    "name": "Четвёрка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "FOUR",
+    "meaning": "Контроль.",
+    "advice": "Не держитесь слишком сильно.",
+    "imageUrl": null
+  },
+  {
+    "name": "Пятёрка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "FIVE",
+    "meaning": "Потери.",
+    "advice": "Ищите поддержку.",
+    "imageUrl": null
+  },
+  {
+    "name": "Шестёрка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "SIX",
+    "meaning": "Помощь.",
+    "advice": "Делитесь.",
+    "imageUrl": null
+  },
+  {
+    "name": "Семёрка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "SEVEN",
+    "meaning": "Ожидание.",
+    "advice": "Будьте терпеливы.",
+    "imageUrl": null
+  },
+  {
+    "name": "Восьмёрка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "EIGHT",
+    "meaning": "Мастерство.",
+    "advice": "Работайте усердно.",
+    "imageUrl": null
+  },
+  {
+    "name": "Девятка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "NINE",
+    "meaning": "Достаток.",
+    "advice": "Наслаждайтесь результатом.",
+    "imageUrl": null
+  },
+  {
+    "name": "Десятка Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "TEN",
+    "meaning": "Стабильность.",
+    "advice": "Думайте о будущем.",
+    "imageUrl": null
+  },
+  {
+    "name": "Паж Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "PAGE",
+    "meaning": "Обучение.",
+    "advice": "Учитесь новому.",
+    "imageUrl": null
+  },
+  {
+    "name": "Рыцарь Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "KNIGHT",
+    "meaning": "Трудолюбие.",
+    "advice": "Будьте последовательны.",
+    "imageUrl": null
+  },
+  {
+    "name": "Королева Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "QUEEN",
+    "meaning": "Забота.",
+    "advice": "Создавайте уют.",
+    "imageUrl": null
+  },
+  {
+    "name": "Король Пентаклей",
+    "arcanaType": "MINOR",
+    "suit": "PENTACLES",
+    "rank": "KING",
+    "meaning": "Богатство.",
+    "advice": "Держите контроль.",
+    "imageUrl": null
+  }
+]

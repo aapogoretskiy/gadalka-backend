@@ -3,6 +3,9 @@ package ru.sapa.gadalka_backend.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import ru.sapa.gadalka_backend.domain.type.ArcanaType;
+import ru.sapa.gadalka_backend.domain.type.Rank;
+import ru.sapa.gadalka_backend.domain.type.Suit;
 
 @Getter
 @Setter
@@ -14,10 +17,18 @@ public class Card {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "arcana_type", nullable = false)
+    private ArcanaType arcanaType;
+
+    @Enumerated(EnumType.STRING)
+    private Suit suit;
+
+    @Enumerated(EnumType.STRING)
+    private Rank rank;
+
     private String meaning;
 
     @Column(columnDefinition = "TEXT")
