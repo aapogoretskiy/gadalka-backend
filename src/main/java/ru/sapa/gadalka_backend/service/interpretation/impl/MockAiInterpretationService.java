@@ -17,15 +17,14 @@ public class MockAiInterpretationService implements AiInterpretationService {
     public String interpret(List<CardDto> cards, String question) {
         StringBuilder builder = new StringBuilder();
 
+        builder.append("Вопрос: \"").append(question).append("\". ");
         builder.append("Ваш расклад показывает: ");
 
         for (CardDto card : cards) {
-
             builder.append(card.getCardPosition())
                     .append(" - ")
                     .append(card.getName())
                     .append(". ");
-
         }
 
         builder.append("Карты намекают на важные изменения в вашей жизни.");
