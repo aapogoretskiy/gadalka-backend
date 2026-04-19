@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneRequest;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
+import ru.sapa.gadalka_backend.api.dto.fortune.FortuneThreeCardRequest;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.service.FortuneService;
 

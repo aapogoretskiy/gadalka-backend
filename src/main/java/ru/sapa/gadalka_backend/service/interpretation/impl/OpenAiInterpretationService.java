@@ -30,10 +30,13 @@ public class OpenAiInterpretationService implements AiInterpretationService {
     public String interpret(List<CardDto> cards, String question) {
         String prompt = buildPrompt(cards, question);
         log.info("prompt: {}", prompt);
+
         AiRequest request = new AiRequest(
                 aiModel,
                 List.of(
-                        new AiMessage("system", "Ты мистический таролог. Интерпретируй расклад таро кратко, красиво и атмосферно. Не используй markdown или другие спецсимволы"),
+                        new AiMessage("system",
+                                "Ты мистический таролог. Интерпретируй расклад таро кратко, красиво и атмосферно, " +
+                                        "строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы"),
                         new AiMessage("user", prompt)
                 )
         );
@@ -43,13 +46,14 @@ public class OpenAiInterpretationService implements AiInterpretationService {
                 .retrieve()
                 .bodyToMono(AiResponse.class)
                 .block();
+
         if (response == null) {
-            return StringUtils.EMPTY; //@TODO тут что-нибудь дефолтное нужно будет сунуть
+            return StringUtils.EMPTY;
         }
 
         List<AiResponse.Choice> choices = response.getChoices();
         if (CollectionUtils.isEmpty(choices)) {
-            return StringUtils.EMPTY; //@TODO тут что-нибудь дефолтное нужно будет сунуть
+            return StringUtils.EMPTY;
         }
 
         return choices.get(0).getMessage().getContent();
@@ -63,8 +67,8 @@ public class OpenAiInterpretationService implements AiInterpretationService {
     private String buildPrompt(List<CardDto> cards, String question) {
         StringBuilder promptBuilder = new StringBuilder();
 
-        promptBuilder.append("Пользователь задал вопрос: \"").append(question).append("\"\n\n");
-        promptBuilder.append("Для ответа был сделан расклад таро.\n");
+        promptBuilder.append("Вопрос пользователя: ").append(question).append("\n\n");
+        promptBuilder.append("Пользователь сделал расклад таро.\n");
         promptBuilder.append("Карты:\n");
 
         for (CardDto card : cards) {
@@ -73,7 +77,9 @@ public class OpenAiInterpretationService implements AiInterpretationService {
                     .append(card.getName())
                     .append("\n");
         }
-        promptBuilder.append("\nСделай мистическую интерпретацию этого расклада с учётом заданного вопроса.");
+
+        promptBuilder.append("\nСделай мистическую интерпретацию этого расклада строго в контексте заданного вопроса. ")
+                .append("Каждую карту свяжи с вопросом напрямую.");
 
         return promptBuilder.toString();
     }
