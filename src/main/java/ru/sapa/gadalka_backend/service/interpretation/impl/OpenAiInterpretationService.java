@@ -27,8 +27,8 @@ public class OpenAiInterpretationService implements AiInterpretationService {
     private String aiModel;
 
     @Override
-    public String interpret(List<CardDto> cards) {
-        String prompt = buildPrompt(cards);
+    public String interpret(List<CardDto> cards, String question) {
+        String prompt = buildPrompt(cards, question);
         log.info("prompt: {}", prompt);
         AiRequest request = new AiRequest(
                 aiModel,
@@ -60,10 +60,11 @@ public class OpenAiInterpretationService implements AiInterpretationService {
         return "openrouter";
     }
 
-    private String buildPrompt(List<CardDto> cards) {
+    private String buildPrompt(List<CardDto> cards, String question) {
         StringBuilder promptBuilder = new StringBuilder();
 
-        promptBuilder.append("Пользователь сделал расклад таро.\n");
+        promptBuilder.append("Пользователь задал вопрос: \"").append(question).append("\"\n\n");
+        promptBuilder.append("Для ответа был сделан расклад таро.\n");
         promptBuilder.append("Карты:\n");
 
         for (CardDto card : cards) {
@@ -72,7 +73,7 @@ public class OpenAiInterpretationService implements AiInterpretationService {
                     .append(card.getName())
                     .append("\n");
         }
-        promptBuilder.append("\nСделай мистическую интерпретацию этого расклада.");
+        promptBuilder.append("\nСделай мистическую интерпретацию этого расклада с учётом заданного вопроса.");
 
         return promptBuilder.toString();
     }
