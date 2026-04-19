@@ -26,11 +26,11 @@ public class FortuneService {
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
 
-    public FortuneResponse getFortune(User user) {
+    public FortuneResponse getFortune(User user, String question) {
         List<Card> cards = cardRepository.findRandomCards(STD_FORTUNE_CARD_COUNT);
         List<CardDto> cardDtoList = spreadService.assignCardPosition(cards);
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
-        String interpretation = interpretationManager.interpret(currentAiProvider, cardDtoList);
+        String interpretation = interpretationManager.interpret(currentAiProvider, cardDtoList, question);
         return new FortuneResponse(user.getUsername(), cardDtoList, interpretation);
     }
 }

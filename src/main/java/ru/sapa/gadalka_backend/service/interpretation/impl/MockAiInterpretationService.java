@@ -14,7 +14,7 @@ import java.util.List;
 public class MockAiInterpretationService implements AiInterpretationService {
 
     @Override
-    public String interpret(List<CardDto> cards) {
+    public String interpret(List<CardDto> cards, String question) {
         StringBuilder builder = new StringBuilder();
 
         builder.append("Ваш расклад показывает: ");

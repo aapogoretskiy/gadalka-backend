@@ -27,6 +27,6 @@ jwt:
   secret: ee9ff174288351f5bbb94e6915ff42792fe34dcc7e71e951c4329496b167f586
 
 openrouter:
-  api-key: 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
+  api-key: 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
   url: https://openrouter.ai/api/v1/chat/completions
   model: openai/gpt-4o-mini

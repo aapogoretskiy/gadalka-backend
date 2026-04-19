@@ -12,11 +12,11 @@ import java.util.Map;
 public class AiInterpretationManager {
     private final Map<String, AiInterpretationService> strategies;
 
-    public String interpret(String provider, List<CardDto> cards) {
+    public String interpret(String provider, List<CardDto> cards, String question) {
         AiInterpretationService interpretationService = strategies.get(provider);
         if (interpretationService == null) {
             throw new IllegalArgumentException("Unknown AI provider: " + provider);
         }
-        return interpretationService.interpret(cards);
+        return interpretationService.interpret(cards, question);
     }
 }
