@@ -14,4 +14,5 @@ public class CardDto {
     private String name;
     private String meaning;
     private CardPosition cardPosition;
+    private String interpretation;
 }

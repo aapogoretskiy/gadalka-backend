@@ -9,10 +9,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
+import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneRequest;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
-import ru.sapa.gadalka_backend.api.dto.fortune.FortuneThreeCardRequest;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.service.CompatibilityService;
 import ru.sapa.gadalka_backend.service.FortuneService;
 
 @RestController
@@ -22,6 +24,7 @@ import ru.sapa.gadalka_backend.service.FortuneService;
 public class FortuneController {
 
     private final FortuneService fortuneService;
+    private final CompatibilityService compatibilityService;
 
     @PostMapping
     @Operation(summary = "Гадание \"3 карты\"",
@@ -30,5 +33,23 @@ public class FortuneController {
                                       HttpServletRequest request) {
         User user = (User) request.getAttribute("user");
         return fortuneService.getFortune(user, fortuneRequest.getQuestion());
+    }
+
+    @PostMapping("/compatibility")
+    @Operation(
+            summary = "Совместимость",
+            description = """
+                    Анализирует совместимость двух людей по нумерологическим правилам.
+                    Возвращает один и тот же расклад для одного и того же пользователя и одной и той же пары (идемпотентность).
+                    Порядок участников в запросе не влияет на результат.
+
+                    **Важно об именах:** для стабильного результата используйте полные официальные имена
+                    (например, «Александр», а не «Саша»). Краткие и полные формы одного имени
+                    считаются разными людьми и дадут разные расклады.
+                    """)
+    public CompatibilityResponse getCompatibility(@Valid @RequestBody CompatibilityRequest compatibilityRequest,
+                                                  HttpServletRequest request) {
+        User user = (User) request.getAttribute("user");
+        return compatibilityService.getCompatibility(user, compatibilityRequest.getPersons());
     }
 }

@@ -14,6 +14,7 @@ import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
+import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,11 +51,11 @@ public class FortuneService {
         List<Card> cards = cardRepository.findRandomCards(STD_FORTUNE_CARD_COUNT);
         List<CardDto> cardDtoList = spreadService.assignCardPosition(cards);
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
-        String interpretation = interpretationManager.interpret(currentAiProvider, cardDtoList, question);
+        InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question);
 
-        saveFortune(user.getId(), questionHash, question, cardDtoList, interpretation);
+        saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
 
-        return new FortuneResponse(user.getUsername(), cardDtoList, interpretation);
+        return new FortuneResponse(user.getUsername(), result.getCards(), result.getGeneralInterpretation());
     }
 
     private void saveFortune(Long userId, String questionHash, String question,

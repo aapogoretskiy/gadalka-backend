@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
+import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
+import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationService;
+import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
 import java.util.List;
 
@@ -14,22 +17,31 @@ import java.util.List;
 public class MockAiInterpretationService implements AiInterpretationService {
 
     @Override
-    public String interpret(List<CardDto> cards, String question) {
-        StringBuilder builder = new StringBuilder();
+    public InterpretationResult interpret(List<CardDto> cards, String question) {
+        String generalInterpretation = "Карты намекают на важные изменения в вашей жизни. Следуйте интуиции.";
 
-        builder.append("Вопрос: \"").append(question).append("\". ");
-        builder.append("Ваш расклад показывает: ");
+        List<CardDto> cardsWithInterpretation = cards.stream()
+                .map(card -> CardDto.builder()
+                        .id(card.getId())
+                        .name(card.getName())
+                        .meaning(card.getMeaning())
+                        .cardPosition(card.getCardPosition())
+                        .interpretation("Карта " + card.getName() + " в позиции «" + card.getCardPosition() + "» указывает на перемены.")
+                        .build())
+                .toList();
 
-        for (CardDto card : cards) {
-            builder.append(card.getCardPosition())
-                    .append(" - ")
-                    .append(card.getName())
-                    .append(". ");
-        }
+        return new InterpretationResult(generalInterpretation, cardsWithInterpretation);
+    }
 
-        builder.append("Карты намекают на важные изменения в вашей жизни.");
-
-        return builder.toString();
+    @Override
+    public String interpretCompatibility(List<CompatibilityRequest.PersonInput> persons,
+                                         int overallScore,
+                                         List<CompatibilityCategoryScore> categories) {
+        String person1 = persons.get(0).getName();
+        String person2 = persons.get(1).getName();
+        return "Звёзды благосклонны к союзу " + person1 + " и " + person2 + ". " +
+               "Числа судьбы говорят о глубокой внутренней связи. " +
+               "Следуйте своей интуиции и доверяйте чувствам.";
     }
 
     @Override
