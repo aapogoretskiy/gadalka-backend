@@ -17,4 +17,13 @@ public interface DailyCardRepository extends JpaRepository<DailyCard, Long> {
                 AND dc.date = :date
             """)
     Optional<DailyCard> findByUserIdAndDate(Long userId, LocalDate date);
+
+    @Query("""
+                SELECT dc
+                FROM DailyCard dc
+                JOIN FETCH dc.card
+                WHERE dc.id = :id
+                AND dc.userId = :userId
+            """)
+    Optional<DailyCard> findByIdAndUserId(Long id, Long userId);
 }

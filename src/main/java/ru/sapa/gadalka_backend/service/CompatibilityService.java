@@ -11,6 +11,7 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
 import ru.sapa.gadalka_backend.domain.CompatibilityReading;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 
@@ -33,6 +34,7 @@ public class CompatibilityService {
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
+    private final DiaryService diaryService;
     private final ObjectMapper objectMapper;
 
     public CompatibilityResponse getCompatibility(User user, List<CompatibilityRequest.PersonInput> persons) {
@@ -51,11 +53,12 @@ public class CompatibilityService {
         String interpretation = interpretationManager.interpretCompatibility(
                 currentAiProvider, persons, numerology.getOverallScore(), numerology.getCategories());
 
-        saveReading(user.getId(), personsHash, persons,
+        CompatibilityReading saved = saveReading(user.getId(), personsHash, persons,
                 numerology.getOverallScore(), label, numerology.getCategories(), interpretation);
-
-        return new CompatibilityResponse(
+        CompatibilityResponse response = new CompatibilityResponse(
                 persons, numerology.getOverallScore(), label, interpretation, numerology.getCategories());
+        diaryService.save(user.getId(), DiaryFeatureType.COMPATIBILITY, saved.getId(), response);
+        return response;
     }
 
     // -------------------------------------------------------------------------
@@ -69,11 +72,11 @@ public class CompatibilityService {
         return "Противоположности";
     }
 
-    private void saveReading(Long userId, String personsHash,
-                             List<CompatibilityRequest.PersonInput> persons,
-                             int score, String label,
-                             List<CompatibilityCategoryScore> categories,
-                             String interpretation) {
+    private CompatibilityReading saveReading(Long userId, String personsHash,
+                                             List<CompatibilityRequest.PersonInput> persons,
+                                             int score, String label,
+                                             List<CompatibilityCategoryScore> categories,
+                                             String interpretation) {
         try {
             String personsJson    = objectMapper.writeValueAsString(persons);
             String categoriesJson = objectMapper.writeValueAsString(categories);
@@ -86,9 +89,10 @@ public class CompatibilityService {
                     .categories(categoriesJson)
                     .interpretation(interpretation)
                     .build();
-            compatibilityReadingRepository.save(reading);
+            return compatibilityReadingRepository.save(reading);
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize compatibility reading for userId={}", userId, e);
+            throw new IllegalStateException("Ошибка сохранения расклада совместимости", e);
         }
     }
 

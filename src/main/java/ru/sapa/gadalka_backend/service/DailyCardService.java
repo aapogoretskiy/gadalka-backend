@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.card.DailyCardResponse;
 import ru.sapa.gadalka_backend.domain.Card;
 import ru.sapa.gadalka_backend.domain.DailyCard;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.DailyCardRepository;
@@ -19,6 +20,7 @@ public class DailyCardService {
     private final CardMapper cardMapper;
     private final DailyCardRepository dailyCardRepository;
     private final CardRepository cardRepository;
+    private final DiaryService diaryService;
 
     @Transactional
     public DailyCardResponse getDailyCard(Long userId) {
@@ -40,6 +42,9 @@ public class DailyCardService {
                 .build();
 
         dailyCardRepository.save(dailyCard);
+
+        DailyCardResponse response = cardMapper.toDailyCardDto(dailyCard);
+        diaryService.save(userId, DiaryFeatureType.DAILY_CARD, dailyCard.getId(), response);
 
         return dailyCard;
     }

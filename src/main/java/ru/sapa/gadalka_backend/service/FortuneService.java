@@ -11,6 +11,7 @@ import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
 import ru.sapa.gadalka_backend.domain.Card;
 import ru.sapa.gadalka_backend.domain.Fortune;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
@@ -37,6 +38,7 @@ public class FortuneService {
     private final FortuneRepository fortuneRepository;
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
+    private final DiaryService diaryService;
     private final ObjectMapper objectMapper;
 
     public FortuneResponse getFortune(User user, String question) {
@@ -53,13 +55,14 @@ public class FortuneService {
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
         InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question);
 
-        saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
-
-        return new FortuneResponse(user.getUsername(), result.getCards(), result.getGeneralInterpretation());
+        Fortune saved = saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
+        FortuneResponse response = new FortuneResponse(user.getUsername(), result.getCards(), result.getGeneralInterpretation());
+        diaryService.save(user.getId(), DiaryFeatureType.THREE_CARD, saved.getId(), response);
+        return response;
     }
 
-    private void saveFortune(Long userId, String questionHash, String question,
-                             List<CardDto> cardDtoList, String interpretation) {
+    private Fortune saveFortune(Long userId, String questionHash, String question,
+                                List<CardDto> cardDtoList, String interpretation) {
         try {
             String cardsJson = objectMapper.writeValueAsString(cardDtoList);
             Fortune fortune = Fortune.builder()
@@ -69,9 +72,10 @@ public class FortuneService {
                     .cards(cardsJson)
                     .interpretation(interpretation)
                     .build();
-            fortuneRepository.save(fortune);
+            return fortuneRepository.save(fortune);
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize cards for fortune persistence, userId={}", userId, e);
+            throw new IllegalStateException("Ошибка сохранения гадания", e);
         }
     }
 
