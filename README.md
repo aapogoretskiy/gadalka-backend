@@ -103,8 +103,8 @@ src/main/resources/db.migration
 
 ```
 V1__init.sql
-V2__seed_user.sql
-V3__create_user_profile.sql
+V2__create_user_profile.sql
+V3__create_user_profile_goals.sql
 ```
 
 Миграции выполняются **автоматически при запуске приложения**.
