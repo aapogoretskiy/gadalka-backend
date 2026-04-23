@@ -42,14 +42,19 @@ public class TelegramAuthService {
         String receivedHash = data.remove("hash");
 
         if (authEnabled && !isValid(data, receivedHash)) {
-            throw new RuntimeException("Invalid Telegram auth data");
+            log.warn("Неверная подпись Telegram initData — аутентификация отклонена");
+            throw new RuntimeException("Неверные данные Telegram аутентификации");
         }
 
         try {
             String userJson = data.get("user");
+            log.debug("Разбор данных Telegram пользователя из initData");
 
             TelegramUserDto telegramUser = objectMapper.readValue(userJson, TelegramUserDto.class);
+            log.debug("Telegram пользователь из initData: telegramId={}, username={}",
+                    telegramUser.getId(), telegramUser.getUsername());
 
+            boolean isNewUser = userRepository.findByTelegramId(telegramUser.getId()).isEmpty();
             User user = userRepository.findByTelegramId(telegramUser.getId())
                     .orElseGet(() -> userRepository.save(
                             User.builder()
@@ -60,17 +65,24 @@ public class TelegramAuthService {
                                     .build()
                     ));
 
-            log.info("Authenticated telegram user: id={}, telegramId={}",
-                    user.getId(), user.getTelegramId());
+            if (isNewUser) {
+                log.info("Зарегистрирован новый пользователь: id={}, telegramId={}, username={}",
+                        user.getId(), user.getTelegramId(), user.getUsername());
+            } else {
+                log.info("Повторный вход пользователя: id={}, telegramId={}, username={}",
+                        user.getId(), user.getTelegramId(), user.getUsername());
+            }
 
             String token = jwtService.generateToken(String.valueOf(user.getId()));
+            log.debug("JWT токен выдан пользователю id={}", user.getId());
             return TelegramAuthResponse.builder()
                     .user(userMapper.toDto(user))
                     .jwtToken(token)
                     .build();
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse Telegram user JSON", e);
+            log.error("Ошибка разбора JSON данных Telegram пользователя: {}", e.getMessage(), e);
+            throw new RuntimeException("Ошибка разбора данных Telegram пользователя", e);
         }
     }
 
