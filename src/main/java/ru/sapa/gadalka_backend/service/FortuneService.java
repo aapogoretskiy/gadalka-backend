@@ -46,16 +46,19 @@ public class FortuneService {
 
         Optional<Fortune> cached = fortuneRepository.findByUserIdAndQuestionHash(user.getId(), questionHash);
         if (cached.isPresent()) {
-            log.info("Returning cached fortune for userId={} questionHash={}", user.getId(), questionHash);
+            log.info("Возвращаем кэшированное гадание: userId={}, questionHash={}", user.getId(), questionHash);
             return buildResponseFromCached(user.getUsername(), cached.get());
         }
 
+        log.info("Новое гадание для userId={}, выбираем {} карт", user.getId(), STD_FORTUNE_CARD_COUNT);
         List<Card> cards = cardRepository.findRandomCards(STD_FORTUNE_CARD_COUNT);
         List<CardDto> cardDtoList = spreadService.assignCardPosition(cards);
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
+        log.debug("Запрашиваем интерпретацию у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
         InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question);
 
         Fortune saved = saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
+        log.info("Гадание сохранено: fortuneId={}, userId={}", saved.getId(), user.getId());
         FortuneResponse response = new FortuneResponse(user.getUsername(), result.getCards(), result.getGeneralInterpretation());
         diaryService.save(user.getId(), DiaryFeatureType.THREE_CARD, saved.getId(), response);
         return response;
@@ -74,7 +77,7 @@ public class FortuneService {
                     .build();
             return fortuneRepository.save(fortune);
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize cards for fortune persistence, userId={}", userId, e);
+            log.error("Ошибка сериализации карт при сохранении гадания, userId={}: {}", userId, e.getMessage(), e);
             throw new IllegalStateException("Ошибка сохранения гадания", e);
         }
     }
@@ -84,7 +87,7 @@ public class FortuneService {
             List<CardDto> cards = objectMapper.readValue(fortune.getCards(), new TypeReference<>() {});
             return new FortuneResponse(username, cards, fortune.getInterpretation());
         } catch (JsonProcessingException e) {
-            log.error("Failed to deserialize cached fortune cards, fortuneId={}", fortune.getId(), e);
+            log.error("Ошибка десериализации карт из кэша гадания, fortuneId={}: {}", fortune.getId(), e.getMessage(), e);
             throw new IllegalStateException("Ошибка чтения сохранённого гадания", e);
         }
     }

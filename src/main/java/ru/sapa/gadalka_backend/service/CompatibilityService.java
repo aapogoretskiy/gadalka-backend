@@ -42,19 +42,24 @@ public class CompatibilityService {
 
         Optional<CompatibilityReading> cached = compatibilityReadingRepository.findByUserIdAndPersonsHash(user.getId(), personsHash);
         if (cached.isPresent()) {
-            log.info("Returning cached compatibility for userId={} personsHash={}", user.getId(), personsHash);
+            log.info("Возвращаем кэшированный расклад совместимости: userId={}, personsHash={}", user.getId(), personsHash);
             return buildResponseFromCached(cached.get(), persons);
         }
 
+        log.info("Новый расклад совместимости для userId={}, участники: {}",
+                user.getId(), persons.stream().map(p -> p.getName()).toList());
         NumerologyCompatibilityResult numerology = numerologyService.calculate(persons.get(0), persons.get(1));
         String label = resolveLabel(numerology.getOverallScore());
 
+        log.debug("Нумерология для userId={}: итоговый балл={}, метка='{}'", user.getId(), numerology.getOverallScore(), label);
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
+        log.debug("Запрашиваем интерпретацию совместимости у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
         String interpretation = interpretationManager.interpretCompatibility(
                 currentAiProvider, persons, numerology.getOverallScore(), numerology.getCategories());
 
         CompatibilityReading saved = saveReading(user.getId(), personsHash, persons,
                 numerology.getOverallScore(), label, numerology.getCategories(), interpretation);
+        log.info("Расклад совместимости сохранён: readingId={}, userId={}, балл={}", saved.getId(), user.getId(), numerology.getOverallScore());
         CompatibilityResponse response = new CompatibilityResponse(
                 persons, numerology.getOverallScore(), label, interpretation, numerology.getCategories());
         diaryService.save(user.getId(), DiaryFeatureType.COMPATIBILITY, saved.getId(), response);
@@ -91,7 +96,7 @@ public class CompatibilityService {
                     .build();
             return compatibilityReadingRepository.save(reading);
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize compatibility reading for userId={}", userId, e);
+            log.error("Ошибка сериализации данных расклада совместимости, userId={}: {}", userId, e.getMessage(), e);
             throw new IllegalStateException("Ошибка сохранения расклада совместимости", e);
         }
     }
@@ -105,7 +110,7 @@ public class CompatibilityService {
             return new CompatibilityResponse(
                     persons, reading.getScore(), reading.getLabel(), reading.getInterpretation(), categories);
         } catch (JsonProcessingException e) {
-            log.error("Failed to deserialize cached compatibility, readingId={}", reading.getId(), e);
+            log.error("Ошибка десериализации кэшированного расклада совместимости, readingId={}: {}", reading.getId(), e.getMessage(), e);
             throw new IllegalStateException("Ошибка чтения сохранённого расклада совместимости", e);
         }
     }

@@ -30,3 +30,8 @@ openrouter:
   api-key: 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
   url: https://openrouter.ai/api/v1/chat/completions
   model: openai/gpt-4o-mini
+
+logging:
+  level:
+    root: INFO
+    ru.sapa.gadalka_backend: DEBUG

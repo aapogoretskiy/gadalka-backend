@@ -109,7 +109,8 @@ public class OpenAiInterpretationService implements AiInterpretationService {
     }
 
     private String callAi(String userPrompt, String systemPrompt) {
-        log.info("AI prompt: {}", userPrompt);
+        log.debug("Отправляем запрос к OpenRouter AI, модель='{}', промпт: {}",
+                aiModel, userPrompt.length() > 100 ? userPrompt.substring(0, 100) + "…" : userPrompt);
 
         AiRequest request = new AiRequest(
                 aiModel,
@@ -119,21 +120,31 @@ public class OpenAiInterpretationService implements AiInterpretationService {
                 )
         );
 
-        AiResponse response = openRouterAiClient.post()
-                .body(BodyInserters.fromValue(request))
-                .retrieve()
-                .bodyToMono(AiResponse.class)
-                .block();
+        AiResponse response;
+        try {
+            response = openRouterAiClient.post()
+                    .body(BodyInserters.fromValue(request))
+                    .retrieve()
+                    .bodyToMono(AiResponse.class)
+                    .block();
+        } catch (Exception ex) {
+            log.error("Ошибка HTTP-запроса к OpenRouter AI (модель='{}'): {}", aiModel, ex.getMessage(), ex);
+            throw ex;
+        }
 
         if (response == null) {
+            log.warn("OpenRouter AI вернул пустой ответ (null) для модели '{}'", aiModel);
             return StringUtils.EMPTY;
         }
 
         List<AiResponse.Choice> choices = response.getChoices();
         if (CollectionUtils.isEmpty(choices)) {
+            log.warn("OpenRouter AI вернул ответ без вариантов (choices пуст) для модели '{}'", aiModel);
             return StringUtils.EMPTY;
         }
 
-        return choices.get(0).getMessage().getContent();
+        String content = choices.get(0).getMessage().getContent();
+        log.debug("Получен ответ от OpenRouter AI, длина: {} символов", content != null ? content.length() : 0);
+        return content;
     }
 }
