@@ -22,8 +22,8 @@ telegram:
     enable: false
   bot:
     token: 8687786304:AAHlFWxMNv5aJ--Wql2TRGv4qxEfCgsxZ1A
-    username: "magicliora_bot"
-    app-url: "https://magicliora.ru/"
+    username: magicliora_bot
+    app-url: https://magicliora.ru/
     enabled: true
 
 jwt:
