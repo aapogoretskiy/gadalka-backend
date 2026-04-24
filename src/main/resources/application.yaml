@@ -23,7 +23,7 @@ telegram:
   bot:
     token: "8687786304:AAHlFWxMNv5aJ--Wql2TRGv4qxEfCgsxZ1A"
     username: "magicliora_bot"
-    app-url: "https://t.me/magicliora_bot/app"
+    app-url: "https://magicliora.ru/"
     enabled: true
 
 jwt:
