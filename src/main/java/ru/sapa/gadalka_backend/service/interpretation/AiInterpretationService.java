@@ -7,7 +7,7 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import java.util.List;
 
 public interface AiInterpretationService {
-    InterpretationResult interpret(List<CardDto> cards, String question);
+    InterpretationResult interpret(List<CardDto> cards, String question, String category);
 
     /**
      * Генерирует текстовую интерпретацию совместимости.

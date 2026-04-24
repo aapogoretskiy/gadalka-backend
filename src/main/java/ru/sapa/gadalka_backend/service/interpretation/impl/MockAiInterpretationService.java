@@ -17,7 +17,7 @@ import java.util.List;
 public class MockAiInterpretationService implements AiInterpretationService {
 
     @Override
-    public InterpretationResult interpret(List<CardDto> cards, String question) {
+    public InterpretationResult interpret(List<CardDto> cards, String question, String category) {
         String generalInterpretation = "Карты намекают на важные изменения в вашей жизни. Следуйте интуиции.";
 
         List<CardDto> cardsWithInterpretation = cards.stream()
@@ -26,7 +26,7 @@ public class MockAiInterpretationService implements AiInterpretationService {
                         .name(card.getName())
                         .meaning(card.getMeaning())
                         .cardPosition(card.getCardPosition())
-                        .interpretation("Карта " + card.getName() + " в позиции «" + card.getCardPosition() + "» указывает на перемены.")
+                        .interpretation("Карта " + card.getName() + " в позиции «" + translatePosition(card.getCardPosition()) + "» указывает на перемены.")
                         .build())
                 .toList();
 
@@ -47,5 +47,14 @@ public class MockAiInterpretationService implements AiInterpretationService {
     @Override
     public String getProvider() {
         return "mock";
+    }
+
+    private String translatePosition(ru.sapa.gadalka_backend.api.dto.card.CardPosition position) {
+        if (position == null) return "";
+        return switch (position) {
+            case PAST -> "Прошлое";
+            case PRESENT -> "Настоящее";
+            case FUTURE -> "Будущее";
+        };
     }
 }

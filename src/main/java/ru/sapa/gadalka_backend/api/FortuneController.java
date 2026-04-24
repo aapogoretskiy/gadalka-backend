@@ -16,6 +16,7 @@ import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.service.CompatibilityService;
 import ru.sapa.gadalka_backend.service.FortuneService;
+import ru.sapa.gadalka_backend.service.ProfanityFilterService;
 
 @RestController
 @RequestMapping("/api/fortune")
@@ -25,14 +26,16 @@ public class FortuneController {
 
     private final FortuneService fortuneService;
     private final CompatibilityService compatibilityService;
+    private final ProfanityFilterService profanityFilterService;
 
     @PostMapping
     @Operation(summary = "Гадание \"3 карты\"",
                description = "Возвращает одно и то же предсказание для одного пользователя и одного вопроса")
     public FortuneResponse getFortune(@Valid @RequestBody FortuneRequest fortuneRequest,
                                       HttpServletRequest request) {
+        profanityFilterService.validate(fortuneRequest.getQuestion());
         User user = (User) request.getAttribute("user");
-        return fortuneService.getFortune(user, fortuneRequest.getQuestion());
+        return fortuneService.getFortune(user, fortuneRequest.getQuestion(), fortuneRequest.getCategory());
     }
 
     @PostMapping("/compatibility")

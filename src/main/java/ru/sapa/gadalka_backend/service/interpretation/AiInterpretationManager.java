@@ -16,9 +16,9 @@ import java.util.Map;
 public class AiInterpretationManager {
     private final Map<String, AiInterpretationService> strategies;
 
-    public InterpretationResult interpret(String provider, List<CardDto> cards, String question) {
-        log.debug("Интерпретация расклада таро через провайдер '{}', карт: {}", provider, cards.size());
-        return getService(provider).interpret(cards, question);
+    public InterpretationResult interpret(String provider, List<CardDto> cards, String question, String category) {
+        log.debug("Интерпретация расклада таро через провайдер '{}', карт: {}, категория: {}", provider, cards.size(), category);
+        return getService(provider).interpret(cards, question, category);
     }
 
     public String interpretCompatibility(String provider,

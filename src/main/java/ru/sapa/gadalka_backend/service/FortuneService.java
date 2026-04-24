@@ -41,8 +41,8 @@ public class FortuneService {
     private final DiaryService diaryService;
     private final ObjectMapper objectMapper;
 
-    public FortuneResponse getFortune(User user, String question) {
-        String questionHash = hashQuestion(user.getId(), question);
+    public FortuneResponse getFortune(User user, String question, String category) {
+        String questionHash = hashQuestion(user.getId(), question, category);
 
         Optional<Fortune> cached = fortuneRepository.findByUserIdAndQuestionHash(user.getId(), questionHash);
         if (cached.isPresent()) {
@@ -50,12 +50,12 @@ public class FortuneService {
             return buildResponseFromCached(user.getUsername(), cached.get());
         }
 
-        log.info("Новое гадание для userId={}, выбираем {} карт", user.getId(), STD_FORTUNE_CARD_COUNT);
+        log.info("Новое гадание для userId={}, категория='{}', выбираем {} карт", user.getId(), category, STD_FORTUNE_CARD_COUNT);
         List<Card> cards = cardRepository.findRandomCards(STD_FORTUNE_CARD_COUNT);
         List<CardDto> cardDtoList = spreadService.assignCardPosition(cards);
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
         log.debug("Запрашиваем интерпретацию у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
-        InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question);
+        InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question, category);
 
         Fortune saved = saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
         log.info("Гадание сохранено: fortuneId={}, userId={}", saved.getId(), user.getId());
@@ -92,10 +92,11 @@ public class FortuneService {
         }
     }
 
-    private String hashQuestion(Long userId, String question) {
+    private String hashQuestion(Long userId, String question, String category) {
         try {
-            String normalized = question.trim().toLowerCase();
-            String input = userId + ":" + normalized;
+            String normalizedQuestion = question.trim().toLowerCase();
+            String normalizedCategory = category != null ? category.trim().toLowerCase() : "";
+            String input = userId + ":" + normalizedQuestion + ":" + normalizedCategory;
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);

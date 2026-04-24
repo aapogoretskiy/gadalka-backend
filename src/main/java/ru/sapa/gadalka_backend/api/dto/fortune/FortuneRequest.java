@@ -14,4 +14,7 @@ public class FortuneRequest {
     @NotBlank(message = "Вопрос не может быть пустым")
     @Size(max = 500, message = "Вопрос не должен превышать 500 символов")
     private String question;
+
+    /** Категория гадания: love, money, work, life, health. Может быть null. */
+    private String category;
 }

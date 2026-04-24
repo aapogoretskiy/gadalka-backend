@@ -12,6 +12,7 @@ import ru.sapa.gadalka_backend.api.dto.ai.AiMessage;
 import ru.sapa.gadalka_backend.api.dto.ai.AiRequest;
 import ru.sapa.gadalka_backend.api.dto.ai.AiResponse;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
+import ru.sapa.gadalka_backend.api.dto.card.CardPosition;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationService;
@@ -30,17 +31,21 @@ public class OpenAiInterpretationService implements AiInterpretationService {
     private String aiModel;
 
     @Override
-    public InterpretationResult interpret(List<CardDto> cards, String question) {
-        String generalInterpretation = callAi(buildGeneralPrompt(cards, question),
+    public InterpretationResult interpret(List<CardDto> cards, String question, String category) {
+        String categoryContext = resolveCategoryContext(category);
+
+        String generalInterpretation = callAi(buildGeneralPrompt(cards, question, categoryContext),
                 "Ты мистический таролог. Интерпретируй расклад таро очень кратко — не более 3-4 предложений суммарно. " +
                 "Пиши атмосферно, строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
+                "Называй позиции карт только по-русски: Прошлое, Настоящее, Будущее — никогда не пиши PAST, PRESENT, FUTURE. " +
                 "Никаких длинных объяснений — только суть.");
 
         List<CardDto> cardsWithInterpretation = cards.stream()
                 .map(card -> {
-                    String cardInterpretation = callAi(buildCardPrompt(card, question),
+                    String cardInterpretation = callAi(buildCardPrompt(card, question, categoryContext),
                             "Ты мистический таролог. Дай очень краткую интерпретацию одной карты таро — 1-2 предложения. " +
-                            "Строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы.");
+                            "Строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
+                            "Называй позицию карты только по-русски: Прошлое, Настоящее или Будущее.");
                     return CardDto.builder()
                             .id(card.getId())
                             .name(card.getName())
@@ -91,21 +96,51 @@ public class OpenAiInterpretationService implements AiInterpretationService {
         return sb.toString();
     }
 
-    private String buildGeneralPrompt(List<CardDto> cards, String question) {
+    private String buildGeneralPrompt(List<CardDto> cards, String question, String categoryContext) {
         StringBuilder sb = new StringBuilder();
+        if (categoryContext != null) {
+            sb.append("Сфера вопроса: ").append(categoryContext).append(". Сделай акцент именно на этой сфере.\n\n");
+        }
         sb.append("Вопрос пользователя: ").append(question).append("\n\n");
         sb.append("Карты расклада:\n");
         for (CardDto card : cards) {
-            sb.append(card.getCardPosition()).append(": ").append(card.getName()).append("\n");
+            sb.append(translatePosition(card.getCardPosition())).append(": ").append(card.getName()).append("\n");
         }
         sb.append("\nДай единую общую интерпретацию расклада в контексте вопроса. Не описывай карты по отдельности.");
         return sb.toString();
     }
 
-    private String buildCardPrompt(CardDto card, String question) {
-        return "Вопрос пользователя: " + question + "\n\n" +
-               "Карта: " + card.getName() + " в позиции «" + card.getCardPosition() + "».\n" +
-               "Дай краткую интерпретацию этой карты в контексте вопроса (1-2 предложения).";
+    private String buildCardPrompt(CardDto card, String question, String categoryContext) {
+        StringBuilder sb = new StringBuilder();
+        if (categoryContext != null) {
+            sb.append("Сфера вопроса: ").append(categoryContext).append(".\n");
+        }
+        sb.append("Вопрос пользователя: ").append(question).append("\n\n");
+        sb.append("Карта: ").append(card.getName())
+          .append(" в позиции «").append(translatePosition(card.getCardPosition())).append("».\n");
+        sb.append("Дай краткую интерпретацию этой карты в контексте вопроса (1-2 предложения).");
+        return sb.toString();
+    }
+
+    private String translatePosition(CardPosition position) {
+        if (position == null) return "";
+        return switch (position) {
+            case PAST -> "Прошлое";
+            case PRESENT -> "Настоящее";
+            case FUTURE -> "Будущее";
+        };
+    }
+
+    private String resolveCategoryContext(String category) {
+        if (category == null || category.isBlank()) return null;
+        return switch (category.toLowerCase()) {
+            case "love"   -> "Любовь и отношения";
+            case "money"  -> "Финансы и деньги";
+            case "work"   -> "Работа и карьера";
+            case "life"   -> "Жизненная ситуация";
+            case "health" -> "Здоровье";
+            default       -> null;
+        };
     }
 
     private String callAi(String userPrompt, String systemPrompt) {
