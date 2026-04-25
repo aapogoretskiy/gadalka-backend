@@ -3,9 +3,9 @@ spring:
     name: gadalka-backend
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/gadalka
-    username: gadalka
-    password: gadalka
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/gadalka}
+    username: ${SPRING_DATASOURCE_USERNAME:gadalka}
+    password: ${SPRING_DATASOURCE_PASSWORD:gadalka}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -19,18 +19,18 @@ spring:
 
 telegram:
   auth:
-    enable: false
+    enable: ${TELEGRAM_AUTH_ENABLE:false}
   bot:
-    token: 8687786304:AAHlFWxMNv5aJ--Wql2TRGv4qxEfCgsxZ1A
+    token: ${TELEGRAM_BOT_TOKEN}
     username: magicliora_bot
     app-url: https://magicliora.ru/
     enabled: true
 
 jwt:
-  secret: ee9ff174288351f5bbb94e6915ff42792fe34dcc7e71e951c4329496b167f586
+  secret: ${JWT_SECRET}
 
 openrouter:
-  api-key: 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
+  api-key: ${OPENROUTER_API_KEY}
   url: https://openrouter.ai/api/v1/chat/completions
   model: openai/gpt-4o-mini
 
