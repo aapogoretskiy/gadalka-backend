@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import ru.sapa.gadalka_backend.api.dto.ErrorResponse;
+import ru.sapa.gadalka_backend.exception.FreeFortuneAlreadyUsedException;
 
 import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
@@ -18,6 +19,17 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(FreeFortuneAlreadyUsedException.class)
+    public ResponseEntity<ErrorResponse> handleFreeFortuneAlreadyUsed(FreeFortuneAlreadyUsedException ex,
+                                                                       HttpServletRequest request) {
+        log.warn("Попытка повторного бесплатного гадания: userId из запроса={}", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex,

@@ -34,6 +34,9 @@ public class User {
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
+    @Column(name = "fortune_used", nullable = false)
+    private boolean fortuneUsed;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

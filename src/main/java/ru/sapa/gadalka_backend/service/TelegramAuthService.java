@@ -78,6 +78,7 @@ public class TelegramAuthService {
             return TelegramAuthResponse.builder()
                     .user(userMapper.toDto(user))
                     .jwtToken(token)
+                    .fortuneUsed(user.isFortuneUsed())
                     .build();
 
         } catch (Exception e) {
