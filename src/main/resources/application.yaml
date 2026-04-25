@@ -19,7 +19,7 @@ spring:
 
 telegram:
   auth:
-    enable: ${TELEGRAM_AUTH_ENABLE:true}
+    enable: ${TELEGRAM_AUTH_ENABLE:false}
   bot:
     token: ${TELEGRAM_BOT_TOKEN}
     username: magicliora_bot
