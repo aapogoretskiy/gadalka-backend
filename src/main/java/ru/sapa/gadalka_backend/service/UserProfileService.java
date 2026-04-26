@@ -26,6 +26,7 @@ public class UserProfileService {
                 .orElseThrow());
     }
 
+    @Transactional
     public ProfileResponse createProfile(Long userId, CreateProfileRequest createRequest) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isEmpty()) {
@@ -45,6 +46,7 @@ public class UserProfileService {
         return map(userProfile);
     }
 
+    @Transactional
     public ProfileResponse updateProfile(Long userId, UpdateProfileRequest request) {
         Optional<UserProfile> userProfileOpt = userProfileRepository.findByUserId(userId);
         if (userProfileOpt.isEmpty()) {
