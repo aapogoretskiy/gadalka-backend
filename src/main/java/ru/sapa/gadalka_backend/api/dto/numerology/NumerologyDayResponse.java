@@ -9,6 +9,7 @@ public record NumerologyDayResponse(
         String dayCodeTitle,
         int lifePathNumber,
         String lifePathTitle,
+        String lifePathDescription,
         String moonPhase,
         String zodiacSign,
         String bestTime,

@@ -34,7 +34,7 @@ public class NumerologyDayService {
         LocalDate today = LocalDate.now();
 
         return repository.findByUserIdAndDate(userId, today)
-                .map(this::toResponse)
+                .map(r -> toResponse(r, userId))
                 .orElseGet(() -> createAndSave(userId, today));
     }
 
@@ -65,6 +65,7 @@ public class NumerologyDayService {
                 contentService.title(dayCode),
                 lifePathNum,
                 contentService.lifePathTitle(lifePathNum),
+                contentService.lifePathDescription(lifePathNum),
                 numerologyService.moonPhase(today),
                 numerologyService.zodiacSign(today),
                 contentService.bestTime(dayCode),
@@ -93,20 +94,35 @@ public class NumerologyDayService {
 
         diaryService.save(userId, DiaryFeatureType.NUMEROLOGY_DAY, reading.getId(), response);
 
-        return toResponse(reading);
+        return toResponse(reading, userId);
     }
 
-    private NumerologyDayResponse toResponse(NumerologyDayReading reading) {
+    private NumerologyDayResponse toResponse(NumerologyDayReading reading, Long userId) {
         try {
             NumerologyDayResponse stored = objectMapper.readValue(reading.getPayload(), NumerologyDayResponse.class);
-            // Подставляем актуальный id из БД
+
+            int lifePathNum          = stored.lifePathNumber();
+            String lifePathTitleStr  = stored.lifePathTitle();
+            String lifePathDescStr   = stored.lifePathDescription();
+
+            // Payload из старой версии не содержит lifePathNumber — пересчитываем на лету
+            if (lifePathNum == 0) {
+                var profileOpt = userProfileRepository.findByUserId(userId);
+                if (profileOpt.isPresent() && profileOpt.get().getBirthDate() != null) {
+                    lifePathNum      = numerologyService.lifePathNumber(profileOpt.get().getBirthDate());
+                    lifePathTitleStr = contentService.lifePathTitle(lifePathNum);
+                    lifePathDescStr  = contentService.lifePathDescription(lifePathNum);
+                }
+            }
+
             return new NumerologyDayResponse(
                     reading.getId(),
                     stored.date(),
                     stored.dayCode(),
                     stored.dayCodeTitle(),
-                    stored.lifePathNumber(),
-                    stored.lifePathTitle(),
+                    lifePathNum,
+                    lifePathTitleStr,
+                    lifePathDescStr,
                     stored.moonPhase(),
                     stored.zodiacSign(),
                     stored.bestTime(),

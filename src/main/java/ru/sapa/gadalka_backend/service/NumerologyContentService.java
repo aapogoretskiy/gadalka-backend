@@ -66,6 +66,11 @@ public class NumerologyContentService {
         return title(lifePathNumber);
     }
 
+    /** Описание числа жизненного пути — общая характеристика числа. */
+    public String lifePathDescription(int lifePathNumber) {
+        return energyOfDay(lifePathNumber);
+    }
+
     public String monthlyAstroEvent(int month) {
         JsonNode node = monthlyAstroNode.get(String.valueOf(month));
         return node != null ? node.asText() : "";
