@@ -5,6 +5,7 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -110,6 +111,81 @@ public class NumerologyService {
 
     // -------------------------------------------------------------------------
 
+
+    // ── Нумерология дня ───────────────────────────────────────────────────────
+
+    /**
+     * Личный код дня: сумма цифр даты рождения + цифр сегодняшней даты.
+     * Мастер-числа 11, 22, 33 не редуцируются.
+     */
+    public int personalDayCode(LocalDate birthDate, LocalDate today) {
+        int sum = sumDigits(birthDate.getDayOfMonth())
+                + sumDigits(birthDate.getMonthValue())
+                + sumDigits(birthDate.getYear())
+                + sumDigits(today.getDayOfMonth())
+                + sumDigits(today.getMonthValue())
+                + sumDigits(today.getYear());
+        return reduceMaster(sum);
+    }
+
+    /**
+     * Личный год: сумма цифр (день рождения + месяц рождения + текущий год).
+     */
+    public int personalYearNumber(LocalDate birthDate, int year) {
+        int sum = sumDigits(birthDate.getDayOfMonth())
+                + sumDigits(birthDate.getMonthValue())
+                + sumDigits(year);
+        return reduceMaster(sum);
+    }
+
+    /**
+     * Личный месяц: личный год + номер текущего месяца.
+     */
+    public int personalMonthNumber(LocalDate birthDate, int year, int month) {
+        int yearNum = personalYearNumber(birthDate, year);
+        return reduceMaster(yearNum + month);
+    }
+
+    /**
+     * Фаза луны по текущей дате.
+     * Опорное новолуние: 6 января 2000 г., синодический период 29.53059 дней.
+     */
+    public String moonPhase(LocalDate date) {
+        LocalDate referenceNewMoon = LocalDate.of(2000, 1, 6);
+        long daysSince = ChronoUnit.DAYS.between(referenceNewMoon, date);
+        double age = daysSince % 29.53059;
+        if (age < 0) age += 29.53059;
+
+        if (age < 1.85)  return "Новолуние";
+        if (age < 7.38)  return "Молодая луна";
+        if (age < 9.22)  return "Первая четверть";
+        if (age < 14.77) return "Прибывающая луна";
+        if (age < 16.61) return "Полнолуние";
+        if (age < 22.15) return "Убывающая луна";
+        if (age < 23.99) return "Последняя четверть";
+        return "Старая луна";
+    }
+
+    /**
+     * Знак зодиака по солнцу на текущую дату.
+     */
+    public String zodiacSign(LocalDate date) {
+        int monthValue = date.getMonthValue();
+        int dayOfMonth = date.getDayOfMonth();
+        if ((monthValue == 3 && dayOfMonth >= 21) || (monthValue == 4 && dayOfMonth <= 19))  return "Овен";
+        if ((monthValue == 4 && dayOfMonth >= 20) || (monthValue == 5 && dayOfMonth <= 20))  return "Телец";
+        if ((monthValue == 5 && dayOfMonth >= 21) || (monthValue == 6 && dayOfMonth <= 20))  return "Близнецы";
+        if ((monthValue == 6 && dayOfMonth >= 21) || (monthValue == 7 && dayOfMonth <= 22))  return "Рак";
+        if ((monthValue == 7 && dayOfMonth >= 23) || (monthValue == 8 && dayOfMonth <= 22))  return "Лев";
+        if ((monthValue == 8 && dayOfMonth >= 23) || (monthValue == 9 && dayOfMonth <= 22))  return "Дева";
+        if ((monthValue == 9 && dayOfMonth >= 23) || (monthValue == 10 && dayOfMonth <= 22)) return "Весы";
+        if ((monthValue == 10 && dayOfMonth >= 23) || (monthValue == 11 && dayOfMonth <= 21)) return "Скорпион";
+        if ((monthValue == 11 && dayOfMonth >= 22) || (monthValue == 12 && dayOfMonth <= 21)) return "Стрелец";
+        if ((monthValue == 12 && dayOfMonth >= 22) || (monthValue == 1 && dayOfMonth <= 19))  return "Козерог";
+        if ((monthValue == 1 && dayOfMonth >= 20) || (monthValue == 2 && dayOfMonth <= 18))   return "Водолей";
+        return "Рыбы";
+    }
+
     /** Число жизненного пути: сумма всех цифр даты рождения, редуцированная до 1–9 */
     int lifePathNumber(LocalDate date) {
         int sum = sumDigits(date.getDayOfMonth())
@@ -193,5 +269,13 @@ public class NumerologyService {
 
     private int clamp(int value) {
         return Math.max(0, Math.min(100, value));
+    }
+
+    /** Редукция с сохранением мастер-чисел 11, 22, 33. */
+    private int reduceMaster(int n) {
+        while (n > 9 && n != 11 && n != 22 && n != 33) {
+            n = sumDigits(n);
+        }
+        return Math.max(1, n);
     }
 }

@@ -15,6 +15,7 @@ import ru.sapa.gadalka_backend.domain.CompatibilityReading;
 import ru.sapa.gadalka_backend.domain.DailyCard;
 import ru.sapa.gadalka_backend.domain.DiaryEntry;
 import ru.sapa.gadalka_backend.domain.Fortune;
+import ru.sapa.gadalka_backend.domain.NumerologyDayReading;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
@@ -22,6 +23,7 @@ import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
 import ru.sapa.gadalka_backend.repository.DailyCardRepository;
 import ru.sapa.gadalka_backend.repository.DiaryRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -38,6 +40,7 @@ public class DiaryService {
     private final FortuneRepository fortuneRepository;
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final DailyCardRepository dailyCardRepository;
+    private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final CardMapper cardMapper;
     private final ObjectMapper objectMapper;
 
@@ -106,9 +109,10 @@ public class DiaryService {
 
     private Object resolvePayload(User user, DiaryFeatureType featureType, Long referenceId) {
         return switch (featureType) {
-            case THREE_CARD -> resolveFortunePayload(user.getId(), referenceId);
-            case COMPATIBILITY -> resolveCompatibilityPayload(user.getId(), referenceId);
-            case DAILY_CARD -> resolveDailyCardPayload(user.getId(), referenceId);
+            case THREE_CARD      -> resolveFortunePayload(user.getId(), referenceId);
+            case COMPATIBILITY   -> resolveCompatibilityPayload(user.getId(), referenceId);
+            case DAILY_CARD      -> resolveDailyCardPayload(user.getId(), referenceId);
+            case NUMEROLOGY_DAY  -> resolveNumerologyDayPayload(user.getId(), referenceId);
         };
     }
 
@@ -148,6 +152,12 @@ public class DiaryService {
         DailyCard dailyCard = dailyCardRepository.findByIdAndUserId(referenceId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Карта дня не найдена"));
         return cardMapper.toDailyCardDto(dailyCard);
+    }
+
+    private JsonNode resolveNumerologyDayPayload(Long userId, Long referenceId) {
+        NumerologyDayReading reading = numerologyDayReadingRepository.findByIdAndUserId(referenceId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Нумерологический расчёт не найден"));
+        return parsePayload(reading.getPayload());
     }
 
     private JsonNode parsePayload(String payload) {
