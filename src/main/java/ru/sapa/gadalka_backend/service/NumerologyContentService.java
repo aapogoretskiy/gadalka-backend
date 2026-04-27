@@ -61,6 +61,11 @@ public class NumerologyContentService {
         return affs.get(idx).asText();
     }
 
+    /** Название числа жизненного пути — та же таблица, что и для кода дня. */
+    public String lifePathTitle(int lifePathNumber) {
+        return title(lifePathNumber);
+    }
+
     public String monthlyAstroEvent(int month) {
         JsonNode node = monthlyAstroNode.get(String.valueOf(month));
         return node != null ? node.asText() : "";

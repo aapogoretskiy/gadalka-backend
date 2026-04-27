@@ -186,12 +186,12 @@ public class NumerologyService {
         return "Рыбы";
     }
 
-    /** Число жизненного пути: сумма всех цифр даты рождения, редуцированная до 1–9 */
-    int lifePathNumber(LocalDate date) {
+    /** Число жизненного пути: сумма всех цифр даты рождения, мастер-числа 11/22/33 сохраняются */
+    public int lifePathNumber(LocalDate date) {
         int sum = sumDigits(date.getDayOfMonth())
                 + sumDigits(date.getMonthValue())
                 + sumDigits(date.getYear());
-        return reduce(sum);
+        return reduceMaster(sum);
     }
 
     /** Число судьбы: сумма значений всех букв имени, редуцированная до 1–9 */

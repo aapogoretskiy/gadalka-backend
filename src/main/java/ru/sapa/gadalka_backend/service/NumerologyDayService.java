@@ -53,6 +53,7 @@ public class NumerologyDayService {
         LocalDate birthDate = profile.getBirthDate();
 
         int dayCode = numerologyService.personalDayCode(birthDate, today);
+        int lifePathNum = numerologyService.lifePathNumber(birthDate);
         int personalYearNum = numerologyService.personalYearNumber(birthDate, today.getYear());
         int personalMonthNum = numerologyService.personalMonthNumber(birthDate, today.getYear(), today.getMonthValue());
         String affirmation = contentService.randomAffirmation(dayCode);
@@ -62,6 +63,8 @@ public class NumerologyDayService {
                 today,
                 dayCode,
                 contentService.title(dayCode),
+                lifePathNum,
+                contentService.lifePathTitle(lifePathNum),
                 numerologyService.moonPhase(today),
                 numerologyService.zodiacSign(today),
                 contentService.bestTime(dayCode),
@@ -102,6 +105,8 @@ public class NumerologyDayService {
                     stored.date(),
                     stored.dayCode(),
                     stored.dayCodeTitle(),
+                    stored.lifePathNumber(),
+                    stored.lifePathTitle(),
                     stored.moonPhase(),
                     stored.zodiacSign(),
                     stored.bestTime(),
