@@ -61,9 +61,9 @@ public class NumerologyContentService {
         return affs.get(idx).asText();
     }
 
-    /** Название числа жизненного пути — та же таблица, что и для кода дня. */
+    /** Название числа жизненного пути — постоянная характеристика (Гуманист, Лидер и т.д.) */
     public String lifePathTitle(int lifePathNumber) {
-        return title(lifePathNumber);
+        return numberNode(lifePathNumber).get("lifePathTitle").asText();
     }
 
     /** Описание числа жизненного пути — общая характеристика числа. */
