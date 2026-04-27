@@ -50,6 +50,7 @@ public class DiaryController extends BaseController {
                     - `THREE_CARD` — расклад «3 карты»
                     - `COMPATIBILITY` — совместимость
                     - `DAILY_CARD` — карта дня
+                    - `NUMEROLOGY_DAY` — личный код дня
 
                     Диапазон дат задаётся параметрами `from` и `to` в формате `yyyy-MM-dd` (включительно).
                     Записи возвращаются в порядке убывания даты создания.

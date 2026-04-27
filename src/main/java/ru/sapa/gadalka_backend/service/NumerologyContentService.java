@@ -16,6 +16,8 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class NumerologyContentService {
 
+    private static final String DATA_NUMEROLOGY_CONTENT_PATH = "/data/numerology-content.json";
+
     private final ObjectMapper objectMapper;
 
     private JsonNode numbersNode;
@@ -24,7 +26,7 @@ public class NumerologyContentService {
     @PostConstruct
     void load() {
         try {
-            JsonNode root = objectMapper.readTree(new ClassPathResource("numerology-content.json").getInputStream());
+            JsonNode root = objectMapper.readTree(new ClassPathResource(DATA_NUMEROLOGY_CONTENT_PATH).getInputStream());
             numbersNode = root.get("numbers");
             monthlyAstroNode = root.get("monthlyAstroEvents");
             log.info("Numerology content loaded successfully");
