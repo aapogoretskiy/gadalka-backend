@@ -23,13 +23,19 @@ public class JwtService {
         return Jwts.builder()
                 .setSubject(userId)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 86400000)) // 24 часа
+                .setExpiration(new Date(System.currentTimeMillis() + 86400000L)) // 24 часа
                 .signWith(key)
                 .compact();
     }
 
-    //@TODO переписать на не Deprecated методы
     public Long getUserIdFromToken(String token) {
-        return Long.parseLong(Jwts.parser().setSigningKey(key).parseClaimsJws(token).getBody().getSubject());
+        return Long.parseLong(
+                Jwts.parserBuilder()
+                        .setSigningKey(key)
+                        .build()
+                        .parseClaimsJws(token)
+                        .getBody()
+                        .getSubject()
+        );
     }
 }

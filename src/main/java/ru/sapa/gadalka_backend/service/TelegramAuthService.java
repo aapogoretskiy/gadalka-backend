@@ -15,6 +15,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -94,6 +95,10 @@ public class TelegramAuthService {
 
         for (String pair : pairs) {
             String[] kv = pair.split("=", 2);
+            if (kv.length < 2) {
+                log.warn("Некорректная пара ключ=значение в initData: '{}'", pair);
+                continue; // пропускаем невалидную пару вместо ArrayIndexOutOfBoundsException
+            }
             String key = kv[0];
             String value = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
             map.put(key, value);
@@ -101,6 +106,7 @@ public class TelegramAuthService {
 
         return map;
     }
+
     private boolean isValid(Map<String, String> data, String receivedHash) {
         try {
             List<String> sorted = new ArrayList<>();
@@ -116,7 +122,11 @@ public class TelegramAuthService {
 
             String calculatedHex = bytesToHex(calculatedHash);
 
-            return calculatedHex.equals(receivedHash);
+            // Используем constant-time сравнение для защиты от timing-атак
+            return MessageDigest.isEqual(
+                    calculatedHex.getBytes(StandardCharsets.UTF_8),
+                    receivedHash.getBytes(StandardCharsets.UTF_8)
+            );
 
         } catch (Exception e) {
             return false;
