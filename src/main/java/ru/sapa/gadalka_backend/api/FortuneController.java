@@ -13,7 +13,6 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneRequest;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
-import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.service.CompatibilityService;
 import ru.sapa.gadalka_backend.service.FortuneService;
 import ru.sapa.gadalka_backend.service.ProfanityFilterService;
@@ -22,7 +21,7 @@ import ru.sapa.gadalka_backend.service.ProfanityFilterService;
 @RequestMapping("/api/fortune")
 @RequiredArgsConstructor
 @Tag(name = "Гадание", description = "Контроллер, отвечающий за кор функционал гадания")
-public class FortuneController {
+public class FortuneController extends BaseController {
 
     private final FortuneService fortuneService;
     private final CompatibilityService compatibilityService;
@@ -34,8 +33,7 @@ public class FortuneController {
     public FortuneResponse getFortune(@Valid @RequestBody FortuneRequest fortuneRequest,
                                       HttpServletRequest request) {
         profanityFilterService.validate(fortuneRequest.getQuestion());
-        User user = (User) request.getAttribute("user");
-        return fortuneService.getFortune(user, fortuneRequest.getQuestion(), fortuneRequest.getCategory());
+        return fortuneService.getFortune(resolveUser(request), fortuneRequest.getQuestion(), fortuneRequest.getCategory());
     }
 
     @PostMapping("/compatibility")
@@ -52,7 +50,6 @@ public class FortuneController {
                     """)
     public CompatibilityResponse getCompatibility(@Valid @RequestBody CompatibilityRequest compatibilityRequest,
                                                   HttpServletRequest request) {
-        User user = (User) request.getAttribute("user");
-        return compatibilityService.getCompatibility(user, compatibilityRequest.getPersons());
+        return compatibilityService.getCompatibility(resolveUser(request), compatibilityRequest.getPersons());
     }
 }

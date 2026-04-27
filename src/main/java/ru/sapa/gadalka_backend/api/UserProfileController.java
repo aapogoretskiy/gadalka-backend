@@ -14,14 +14,13 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.sapa.gadalka_backend.api.dto.profile.CreateProfileRequest;
 import ru.sapa.gadalka_backend.api.dto.profile.ProfileResponse;
 import ru.sapa.gadalka_backend.api.dto.profile.UpdateProfileRequest;
-import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.service.UserProfileService;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/user-profiles")
 @Tag(name = "Профиль пользователя", description = "Контроллер для управления профилем пользователя (CRUD)")
-public class UserProfileController {
+public class UserProfileController extends BaseController {
 
     private final UserProfileService userProfileService;
 
@@ -29,30 +28,30 @@ public class UserProfileController {
     @Operation(summary = "Создание профиля пользователя")
     public ProfileResponse create(HttpServletRequest request,
                                   @RequestBody CreateProfileRequest createProfileRequest) {
-        User user = (User) request.getAttribute("user");
-        return userProfileService.createProfile(user.getId(), createProfileRequest);
+        return userProfileService.createProfile(resolveUserId(request), createProfileRequest);
     }
 
     @GetMapping
     @Operation(summary = "Получение профиля пользователя")
     public ProfileResponse get(HttpServletRequest request) {
-        User user = (User) request.getAttribute("user");
-        return userProfileService.getProfile(user.getId());
+        return userProfileService.getProfile(resolveUserId(request));
     }
 
     @PutMapping
     @Operation(summary = "Обновление профиля пользователя")
     public ProfileResponse update(HttpServletRequest request,
                                   @RequestBody UpdateProfileRequest updateRequest) {
-        User user = (User) request.getAttribute("user");
-        return userProfileService.updateProfile(user.getId(), updateRequest);
+        return userProfileService.updateProfile(resolveUserId(request), updateRequest);
     }
 
     @DeleteMapping
     @Operation(summary = "Удаление профиля пользователя")
     public void delete(HttpServletRequest request) {
-        User user = (User) request.getAttribute("user");
-        userProfileService.deleteProfile(user.getId());
+        userProfileService.deleteProfile(resolveUserId(request));
+    }
+
+    private Long resolveUserId(HttpServletRequest request) {
+        return resolveUser(request).getId();
     }
 
 }

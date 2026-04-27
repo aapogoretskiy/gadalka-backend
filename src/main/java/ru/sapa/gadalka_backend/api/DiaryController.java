@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import ru.sapa.gadalka_backend.api.dto.diary.DiaryEntryDto;
 import ru.sapa.gadalka_backend.api.dto.diary.DiaryHistoryResponse;
 import ru.sapa.gadalka_backend.api.dto.diary.DiarySaveRequest;
-import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.service.DiaryService;
 
@@ -23,7 +22,7 @@ import java.time.LocalDate;
 @RequestMapping("/api/diary")
 @RequiredArgsConstructor
 @Tag(name = "Дневник", description = "История результатов функционала пользователя")
-public class DiaryController {
+public class DiaryController extends BaseController {
 
     private final DiaryService diaryService;
 
@@ -38,8 +37,7 @@ public class DiaryController {
                     """)
     public DiaryEntryDto saveEntry(@Valid @RequestBody DiarySaveRequest body,
                                    HttpServletRequest request) {
-        User user = (User) request.getAttribute("user");
-        return diaryService.saveByReference(user, body.getFeatureType(), body.getReferenceId());
+        return diaryService.saveByReference(resolveUser(request), body.getFeatureType(), body.getReferenceId());
     }
 
     @GetMapping
@@ -68,7 +66,6 @@ public class DiaryController {
 
             HttpServletRequest request
     ) {
-        User user = (User) request.getAttribute("user");
-        return diaryService.getHistory(user.getId(), featureType, from, to);
+        return diaryService.getHistory(resolveUser(request).getId(), featureType, from, to);
     }
 }

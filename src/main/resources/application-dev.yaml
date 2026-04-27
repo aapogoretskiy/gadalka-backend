@@ -1,0 +1,17 @@
+## Dev-профиль: активируется через --spring.profiles.active=dev
+## или переменной окружения SPRING_PROFILES_ACTIVE=dev
+
+security:
+  cors:
+    allowed-origins: "http://localhost:5173,http://localhost:3000,https://magicliora.ru"
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
+
+logging:
+  level:
+    root: DEBUG
+    ru.sapa.gadalka_backend: DEBUG
