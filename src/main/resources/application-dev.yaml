@@ -13,5 +13,5 @@ springdoc:
 
 logging:
   level:
-    root: DEBUG
-    ru.sapa.gadalka_backend: DEBUG
+    root: INFO
+    ru.sapa.gadalka_backend: INFO

@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ru.sapa.gadalka_backend.mapper.UserMapper;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.JwtService;
+import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.TelegramAuthService;
 
 import java.lang.reflect.Field;
@@ -32,12 +33,13 @@ class TelegramAuthServiceTest {
     @Mock private JwtService jwtService;
     @Mock private ObjectMapper objectMapper;
     @Mock private UserRepository userRepository;
+    @Mock private ReferralService referralService;
 
     private TelegramAuthService service;
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new TelegramAuthService(userMapper, jwtService, objectMapper, userRepository);
+        service = new TelegramAuthService(userMapper, jwtService, objectMapper, userRepository, referralService);
         // Инжектируем приватные поля через reflection (Spring их заполнит через @Value)
         setField(service, "botToken", "test_bot_token");
         setField(service, "authEnabled", true);

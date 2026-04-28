@@ -30,6 +30,7 @@ public class TelegramAuthService {
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
+    private final ReferralService referralService;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -46,6 +47,10 @@ public class TelegramAuthService {
             log.warn("Неверная подпись Telegram initData — аутентификация отклонена");
             throw new RuntimeException("Неверные данные Telegram аутентификации");
         }
+
+        // Реферальный код приходит в поле start_param (если пользователь открыл Mini App
+        // по ссылке вида https://t.me/bot?start=CODE или через startapp=CODE)
+        String startParam = data.get("start_param");
 
         try {
             String userJson = data.get("user");
@@ -72,6 +77,11 @@ public class TelegramAuthService {
             } else {
                 log.info("Повторный вход пользователя: id={}, telegramId={}, username={}",
                         user.getId(), user.getTelegramId(), user.getUsername());
+            }
+
+            // Фиксируем реферальное событие APP_OPEN (если пришли по реферальной ссылке)
+            if (startParam != null && !startParam.isBlank()) {
+                referralService.recordAppOpen(telegramUser.getId(), user, isNewUser, startParam);
             }
 
             String token = jwtService.generateToken(String.valueOf(user.getId()));

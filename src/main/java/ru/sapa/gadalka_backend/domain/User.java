@@ -37,6 +37,14 @@ public class User {
     @Column(name = "fortune_used", nullable = false)
     private boolean fortuneUsed;
 
+    /**
+     * Реферальный источник первой регистрации пользователя.
+     * Проставляется один раз при создании аккаунта, если пользователь пришёл по реферальной ссылке.
+     * Например: "telegram_channel1", "tiktok_video1".
+     */
+    @Column(name = "referral_source", length = 255)
+    private String referralSource;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

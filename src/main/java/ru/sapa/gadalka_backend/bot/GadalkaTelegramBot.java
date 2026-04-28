@@ -15,6 +15,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.webapp.WebAppInfo;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+import ru.sapa.gadalka_backend.service.ReferralService;
 
 import java.util.List;
 
@@ -24,6 +25,7 @@ import java.util.List;
 public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private final TelegramClient telegramClient;
+    private final ReferralService referralService;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -31,8 +33,9 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     @Value("${telegram.bot.app-url}")
     private String appUrl;
 
-    public GadalkaTelegramBot(TelegramClient telegramClient) {
+    public GadalkaTelegramBot(TelegramClient telegramClient, ReferralService referralService) {
         this.telegramClient = telegramClient;
+        this.referralService = referralService;
     }
 
     @Override
@@ -52,15 +55,35 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
         String text = update.getMessage().getText();
         long chatId = update.getMessage().getChatId();
 
-        if ("/start".equals(text) || text.startsWith("/start ")) {
-            sendWelcomeMessage(chatId);
+        if (text.equals("/start") || text.startsWith("/start ")) {
+            String referralCode = extractReferralCode(text);
+            if (referralCode != null) {
+                referralService.recordBotEntry(chatId, referralCode);
+            }
+            sendWelcomeMessage(chatId, referralCode);
         }
     }
 
-    private void sendWelcomeMessage(long chatId) {
+    /**
+     * Извлекает реферальный код из команды вида "/start telegram_channel1".
+     * Возвращает null, если код отсутствует или пустой.
+     * Метод публичный для удобства тестирования.
+     */
+    public String extractReferralCode(String startCommand) {
+        if (startCommand == null || !startCommand.startsWith("/start ")) return null;
+        String code = startCommand.substring("/start ".length()).trim();
+        return code.isEmpty() ? null : code;
+    }
+
+    private void sendWelcomeMessage(long chatId, String referralCode) {
+        // Чтобы Mini App получает start_param в initData при открытии
+        String webAppUrl = (referralCode != null && !referralCode.isBlank())
+                ? appUrl + "?startapp=" + referralCode
+                : appUrl;
+
         InlineKeyboardButton button = InlineKeyboardButton.builder()
                 .text("🔮 Открыть Гадалку")
-                .webApp(new WebAppInfo(appUrl))
+                .webApp(new WebAppInfo(webAppUrl))
                 .build();
 
         InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
@@ -78,7 +101,7 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
 
         try {
             telegramClient.execute(message);
-            log.info("Приветственное сообщение отправлено: chatId={}", chatId);
+            log.info("Приветственное сообщение отправлено: chatId={}, referralCode={}", chatId, referralCode);
         } catch (TelegramApiException e) {
             log.error("Ошибка отправки приветственного сообщения, chatId={}: {}", chatId, e.getMessage(), e);
         }
