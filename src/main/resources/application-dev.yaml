@@ -3,7 +3,7 @@
 
 security:
   cors:
-    allowed-origins: "http://localhost:5173,http://localhost:3000,https://magicliora.ru"
+    allowed-origins: "http://localhost:5173,http://localhost:3000,https://magicliora.com,https://magicliora.ru"
 
 springdoc:
   swagger-ui:
