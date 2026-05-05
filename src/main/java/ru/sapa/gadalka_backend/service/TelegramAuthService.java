@@ -36,7 +36,7 @@ public class TelegramAuthService {
     @Value("${telegram.bot.token}")
     private String botToken;
 
-    @Value("${telegram.auth.enable}")
+    @Value("${telegram.auth.enable:true}")
     private boolean authEnabled;
 
     public TelegramAuthResponse authenticate(String initData) {
