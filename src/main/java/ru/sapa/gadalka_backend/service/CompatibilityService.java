@@ -35,16 +35,21 @@ public class CompatibilityService {
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
+    private final FortuneCreditService fortuneCreditService;
     private final ObjectMapper objectMapper;
 
     public CompatibilityResponse getCompatibility(User user, List<CompatibilityRequest.PersonInput> persons) {
         String personsHash = hashPersons(user.getId(), persons);
 
+        // Кэш: та же пара уже анализировалась — возвращаем бесплатно
         Optional<CompatibilityReading> cached = compatibilityReadingRepository.findByUserIdAndPersonsHash(user.getId(), personsHash);
         if (cached.isPresent()) {
             log.info("Возвращаем кэшированный расклад совместимости: userId={}, personsHash={}", user.getId(), personsHash);
             return buildResponseFromCached(cached.get(), persons);
         }
+
+        // Новый расклад — списываем кредит до вызова AI
+        fortuneCreditService.spendCredit(user.getId(), DiaryFeatureType.COMPATIBILITY);
 
         log.info("Новый расклад совместимости для userId={}, участники: {}",
                 user.getId(), persons.stream().map(p -> p.getName()).toList());

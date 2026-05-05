@@ -28,7 +28,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/api/health",
             "/swagger-ui",
             "/v3/api-docs",
-            "/actuator"
+            "/actuator",
+            "/api/v1/payments/products",
+            "/api/v1/payments/yookassa/webhook"
     };
 
     @Override

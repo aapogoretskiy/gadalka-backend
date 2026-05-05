@@ -31,6 +31,7 @@ public class TelegramAuthService {
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
     private final ReferralService referralService;
+    private final FortuneCreditService fortuneCreditService;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -89,7 +90,7 @@ public class TelegramAuthService {
             return TelegramAuthResponse.builder()
                     .user(userMapper.toDto(user))
                     .jwtToken(token)
-                    .fortuneUsed(user.isFortuneUsed())
+                    .readingBalance(fortuneCreditService.getBalance(user.getId()))
                     .build();
 
         } catch (Exception e) {

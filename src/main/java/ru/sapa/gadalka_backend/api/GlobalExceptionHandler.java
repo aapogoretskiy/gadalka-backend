@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import ru.sapa.gadalka_backend.api.dto.ErrorResponse;
 import ru.sapa.gadalka_backend.exception.FreeFortuneAlreadyUsedException;
+import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
+import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
+import ru.sapa.gadalka_backend.exception.ProductNotFoundException;
 
 import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
@@ -26,6 +29,39 @@ public class GlobalExceptionHandler {
         log.warn("Попытка повторного бесплатного гадания: userId из запроса={}", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
                 .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    @ExceptionHandler(InsufficientCreditsException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientCredits(InsufficientCreditsException ex,
+                                                                    HttpServletRequest request) {
+        log.info("Недостаточно гаданий: uri={}", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex,
+                                                               HttpServletRequest request) {
+        log.warn("Платёж не найден: uri={}, msg={}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(HttpStatus.NOT_FOUND.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    @ExceptionHandler(ProductNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleProductNotFound(ProductNotFoundException ex,
+                                                               HttpServletRequest request) {
+        log.warn("Продукт не найден: uri={}, msg={}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(HttpStatus.NOT_FOUND.value(),
                         ex.getMessage(),
                         request.getRequestURI(),
                         LocalDateTime.now()));

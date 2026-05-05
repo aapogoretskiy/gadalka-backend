@@ -40,6 +40,27 @@ telegram:
 jwt:
   secret: ${JWT_SECRET}
 
+# ЮKassa — платёжный провайдер для рублёвых платежей
+# Тестовые credentials: получить на yookassa.ru после регистрации
+# Боевые credentials: выдаются после верификации ИП
+yookassa:
+  shop-id: ${YOOKASSA_SHOP_ID}
+  secret-key: ${YOOKASSA_SECRET_KEY}
+  api-url: https://api.yookassa.ru/v3
+  # URL куда ЮKassa перенаправит пользователя после оплаты
+  return-url: ${YOOKASSA_RETURN_URL:https://magicliora.com/payment/result}
+  webhook:
+    # Фильтрация запросов на webhook по IP-адресам ЮKassa
+    # В dev отключить: YOOKASSA_WEBHOOK_IP_FILTER_ENABLED=false
+    # В продакшне всегда true
+    ip-filter-enabled: ${YOOKASSA_WEBHOOK_IP_FILTER_ENABLED:true}
+
+# Scheduler для обработки очереди webhook'ов
+# fixedDelay: задержка между окончанием предыдущего и началом следующего запуска (мс)
+payment:
+  webhook:
+    process-delay-ms: ${PAYMENT_WEBHOOK_PROCESS_DELAY_MS:30000}
+
 openrouter:
   api-key: ${OPENROUTER_API_KEY}
   url: https://openrouter.ai/api/v1/chat/completions

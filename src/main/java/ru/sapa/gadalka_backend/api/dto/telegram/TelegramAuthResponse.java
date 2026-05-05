@@ -10,5 +10,5 @@ import lombok.*;
 public class TelegramAuthResponse {
     private TelegramUserDto user;
     private String jwtToken;
-    private boolean fortuneUsed;
+    private int readingBalance;
 }
