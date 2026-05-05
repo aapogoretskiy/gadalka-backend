@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.mapper.UserMapper;
 import ru.sapa.gadalka_backend.repository.UserRepository;
+import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.JwtService;
 import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.TelegramAuthService;
@@ -40,6 +41,7 @@ class TelegramAuthServiceReferralTest {
     @Mock private JwtService jwtService;
     @Mock private UserRepository userRepository;
     @Mock private ReferralService referralService;
+    @Mock private FortuneCreditService fortuneCreditService;
 
     private TelegramAuthService service;
 
@@ -51,7 +53,7 @@ class TelegramAuthServiceReferralTest {
     @BeforeEach
     void setUp() throws Exception {
         service = new TelegramAuthService(userMapper, jwtService, new ObjectMapper(),
-                userRepository, referralService);
+                userRepository, referralService, fortuneCreditService);
         setField(service, "botToken", "test_token");
         setField(service, "authEnabled", false);  // отключаем HMAC-проверку
     }
