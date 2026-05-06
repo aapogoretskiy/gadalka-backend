@@ -15,6 +15,7 @@ import java.util.List;
 @AllArgsConstructor
 public class FortuneResponse {
     private String username;
+    private String question;
     private List<CardDto> cards = new ArrayList<>();
     private String interpretation;
 }

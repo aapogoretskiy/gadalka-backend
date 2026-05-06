@@ -69,7 +69,7 @@ public class FortuneService {
         Fortune saved = saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
         log.info("Гадание сохранено: fortuneId={}, userId={}", saved.getId(), user.getId());
 
-        FortuneResponse response = new FortuneResponse(user.getUsername(), result.getCards(), result.getGeneralInterpretation());
+        FortuneResponse response = new FortuneResponse(user.getUsername(), question, result.getCards(), result.getGeneralInterpretation());
         diaryService.save(user.getId(), DiaryFeatureType.THREE_CARD, saved.getId(), response);
         return response;
     }
@@ -95,7 +95,7 @@ public class FortuneService {
     private FortuneResponse buildResponseFromCached(String username, Fortune fortune) {
         try {
             List<CardDto> cards = objectMapper.readValue(fortune.getCards(), new TypeReference<>() {});
-            return new FortuneResponse(username, cards, fortune.getInterpretation());
+            return new FortuneResponse(username, fortune.getQuestion(), cards, fortune.getInterpretation());
         } catch (JsonProcessingException e) {
             log.error("Ошибка десериализации карт из кэша гадания, fortuneId={}: {}", fortune.getId(), e.getMessage(), e);
             throw new IllegalStateException("Ошибка чтения сохранённого гадания", e);
