@@ -18,6 +18,7 @@ import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -38,37 +39,62 @@ public class CompatibilityService {
     private final FortuneCreditService fortuneCreditService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Бесплатное превью: возвращает счёт и метку.
+     * AI-интерпретация генерируется и сохраняется сразу (чтобы unlock был мгновенным),
+     * но в ответ не включается пока пользователь не оплатит.
+     */
     public CompatibilityResponse getCompatibility(User user, List<CompatibilityRequest.PersonInput> persons) {
         String personsHash = hashPersons(user.getId(), persons);
 
-        // Кэш: та же пара уже анализировалась — возвращаем бесплатно
+        // Кэш: та же пара уже анализировалась — возвращаем превью (или полный, если уже разблокирован)
         Optional<CompatibilityReading> cached = compatibilityReadingRepository.findByUserIdAndPersonsHash(user.getId(), personsHash);
         if (cached.isPresent()) {
             log.info("Возвращаем кэшированный расклад совместимости: userId={}, personsHash={}", user.getId(), personsHash);
-            return buildResponseFromCached(cached.get(), persons);
+            return buildResponse(cached.get(), persons);
         }
 
-        // Новый расклад — списываем кредит до вызова AI
-        fortuneCreditService.spendCredit(user.getId(), DiaryFeatureType.COMPATIBILITY);
-
+        // Новый расклад — генерируем AI-интерпретацию БЕЗ списания кредита
         log.info("Новый расклад совместимости для userId={}, участники: {}",
-                user.getId(), persons.stream().map(p -> p.getName()).toList());
+                user.getId(), persons.stream().map(CompatibilityRequest.PersonInput::getName).toList());
         NumerologyCompatibilityResult numerology = numerologyService.calculate(persons.get(0), persons.get(1));
         String label = resolveLabel(numerology.getOverallScore());
 
-        log.debug("Нумерология для userId={}: итоговый балл={}, метка='{}'", user.getId(), numerology.getOverallScore(), label);
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
-        log.debug("Запрашиваем интерпретацию совместимости у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
         String interpretation = interpretationManager.interpretCompatibility(
                 currentAiProvider, persons, numerology.getOverallScore(), numerology.getCategories());
 
         CompatibilityReading saved = saveReading(user.getId(), personsHash, persons,
                 numerology.getOverallScore(), label, numerology.getCategories(), interpretation);
         log.info("Расклад совместимости сохранён: readingId={}, userId={}, балл={}", saved.getId(), user.getId(), numerology.getOverallScore());
-        CompatibilityResponse response = new CompatibilityResponse(
-                persons, numerology.getOverallScore(), label, interpretation, numerology.getCategories());
-        diaryService.save(user.getId(), DiaryFeatureType.COMPATIBILITY, saved.getId(), response);
-        return response;
+
+        // Сохраняем в дневник (без полного анализа — он появится после разблокировки)
+        CompatibilityResponse previewResponse = buildResponse(saved, persons);
+        diaryService.save(user.getId(), DiaryFeatureType.COMPATIBILITY, saved.getId(), previewResponse);
+        return previewResponse;
+    }
+
+    /**
+     * Разблокировка полного анализа за 1 гадание.
+     * Повторный вызов для уже разблокированного расклада — бесплатен.
+     */
+    public CompatibilityResponse unlockCompatibility(Long readingId, User user) {
+        CompatibilityReading reading = compatibilityReadingRepository
+                .findByIdAndUserId(readingId, user.getId())
+                .orElseThrow(() -> new RuntimeException("Расклад не найден"));
+
+        if (reading.getUnlockedAt() == null) {
+            // Ещё не разблокирован — списываем кредит
+            fortuneCreditService.spendCredit(user.getId(), DiaryFeatureType.COMPATIBILITY);
+            reading.setUnlockedAt(OffsetDateTime.now());
+            compatibilityReadingRepository.save(reading);
+            log.info("Расклад совместимости разблокирован: readingId={}, userId={}", readingId, user.getId());
+        } else {
+            log.info("Повторный запрос разблокированного расклада (бесплатно): readingId={}, userId={}", readingId, user.getId());
+        }
+
+        List<CompatibilityRequest.PersonInput> persons = parsePersons(reading.getPersons());
+        return buildResponse(reading, persons);
     }
 
     // -------------------------------------------------------------------------
@@ -106,17 +132,33 @@ public class CompatibilityService {
         }
     }
 
-    private CompatibilityResponse buildResponseFromCached(
-            CompatibilityReading reading,
-            List<CompatibilityRequest.PersonInput> persons) {
+    /** Строит ответ: превью (без интерпретации) или полный (если разблокирован). */
+    private CompatibilityResponse buildResponse(CompatibilityReading reading,
+                                                List<CompatibilityRequest.PersonInput> persons) {
+        boolean unlocked = reading.getUnlockedAt() != null;
         try {
-            List<CompatibilityCategoryScore> categories = objectMapper.readValue(
-                    reading.getCategories(), new TypeReference<>() {});
+            List<CompatibilityCategoryScore> categories = unlocked
+                    ? objectMapper.readValue(reading.getCategories(), new TypeReference<>() {})
+                    : null;
             return new CompatibilityResponse(
-                    persons, reading.getScore(), reading.getLabel(), reading.getInterpretation(), categories);
+                    persons,
+                    reading.getScore(),
+                    reading.getLabel(),
+                    reading.getId(),
+                    unlocked,
+                    unlocked ? reading.getInterpretation() : null,
+                    categories);
         } catch (JsonProcessingException e) {
-            log.error("Ошибка десериализации кэшированного расклада совместимости, readingId={}: {}", reading.getId(), e.getMessage(), e);
-            throw new IllegalStateException("Ошибка чтения сохранённого расклада совместимости", e);
+            log.error("Ошибка десериализации расклада совместимости, readingId={}: {}", reading.getId(), e.getMessage(), e);
+            throw new IllegalStateException("Ошибка чтения расклада совместимости", e);
+        }
+    }
+
+    private List<CompatibilityRequest.PersonInput> parsePersons(String personsJson) {
+        try {
+            return objectMapper.readValue(personsJson, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Ошибка парсинга участников расклада", e);
         }
     }
 

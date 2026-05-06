@@ -7,4 +7,5 @@ import java.util.Optional;
 
 public interface CompatibilityReadingRepository extends JpaRepository<CompatibilityReading, Long> {
     Optional<CompatibilityReading> findByUserIdAndPersonsHash(Long userId, String personsHash);
+    Optional<CompatibilityReading> findByIdAndUserId(Long id, Long userId);
 }

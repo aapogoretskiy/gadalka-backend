@@ -54,6 +54,14 @@ public class CompatibilityReading {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    /**
+     * Момент, когда пользователь потратил гадание на полный анализ.
+     * null  — только превью (счёт + метка), интерпретация скрыта.
+     * !null — разблокировано, полный анализ доступен бесплатно повторно.
+     */
+    @Column(name = "unlocked_at")
+    private OffsetDateTime unlockedAt;
+
     @PrePersist
     void prePersist() {
         if (createdAt == null) {

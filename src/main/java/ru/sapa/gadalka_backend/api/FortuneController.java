@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +35,16 @@ public class FortuneController extends BaseController {
                                       HttpServletRequest request) {
         profanityFilterService.validate(fortuneRequest.getQuestion());
         return fortuneService.getFortune(resolveUser(request), fortuneRequest.getQuestion(), fortuneRequest.getCategory());
+    }
+
+    @PostMapping("/compatibility/{id}/unlock")
+    @Operation(
+            summary = "Разблокировать полный анализ совместимости",
+            description = "Списывает 1 гадание и возвращает полный анализ (интерпретацию и категории). " +
+                          "Повторный вызов для уже разблокированного расклада — бесплатен.")
+    public CompatibilityResponse unlockCompatibility(@PathVariable Long id,
+                                                     HttpServletRequest request) {
+        return compatibilityService.unlockCompatibility(id, resolveUser(request));
     }
 
     @PostMapping("/compatibility")
