@@ -137,6 +137,7 @@ public class DiaryService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Расклад совместимости не найден"));
         try {
             return Map.of(
+                    "id", reading.getId(),
                     "persons", objectMapper.readTree(reading.getPersons()),
                     "compatibilityScore", reading.getScore(),
                     "label", reading.getLabel(),
