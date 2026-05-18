@@ -52,9 +52,29 @@ public class MockAiInterpretationService implements AiInterpretationService {
     private String translatePosition(ru.sapa.gadalka_backend.api.dto.card.CardPosition position) {
         if (position == null) return "";
         return switch (position) {
-            case PAST -> "Прошлое";
+            // Три карты
+            case PAST    -> "Прошлое";
             case PRESENT -> "Настоящее";
-            case FUTURE -> "Будущее";
+            case FUTURE  -> "Будущее";
+            // Подкова
+            case HORSESHOE_PAST      -> "Прошлое";
+            case HORSESHOE_PRESENT   -> "Настоящее";
+            case HORSESHOE_HIDDEN    -> "Скрытые влияния";
+            case HORSESHOE_OBSTACLES -> "Препятствия";
+            case HORSESHOE_EXTERNAL  -> "Внешние влияния";
+            case HORSESHOE_ADVICE    -> "Совет";
+            case HORSESHOE_OUTCOME   -> "Итог";
+            // Кельтский крест
+            case CELTIC_HEART           -> "Суть вопроса";
+            case CELTIC_CROSS           -> "Что мешает";
+            case CELTIC_FOUNDATION      -> "Основа";
+            case CELTIC_PAST            -> "Прошлое";
+            case CELTIC_POSSIBLE_FUTURE -> "Возможное будущее";
+            case CELTIC_NEAR_FUTURE     -> "Ближайшее будущее";
+            case CELTIC_SELF            -> "Ваша позиция";
+            case CELTIC_EXTERNAL        -> "Внешние влияния";
+            case CELTIC_HOPES_FEARS     -> "Надежды и страхи";
+            case CELTIC_OUTCOME         -> "Итог";
         };
     }
 }
