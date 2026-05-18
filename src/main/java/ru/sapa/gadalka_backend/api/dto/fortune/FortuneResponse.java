@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
+import ru.sapa.gadalka_backend.domain.type.SpreadType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,4 +19,5 @@ public class FortuneResponse {
     private String question;
     private List<CardDto> cards = new ArrayList<>();
     private String interpretation;
+    private SpreadType spreadType;
 }

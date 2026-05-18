@@ -13,6 +13,7 @@ import ru.sapa.gadalka_backend.domain.Card;
 import ru.sapa.gadalka_backend.domain.Fortune;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
+import ru.sapa.gadalka_backend.domain.type.SpreadType;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
@@ -32,8 +33,6 @@ import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER
 @RequiredArgsConstructor
 public class FortuneService {
 
-    private static final int STD_FORTUNE_CARD_COUNT = 3;
-
     private final SpreadService spreadService;
     private final CardRepository cardRepository;
     private final FortuneRepository fortuneRepository;
@@ -44,37 +43,42 @@ public class FortuneService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public FortuneResponse getFortune(User user, String question, String category) {
-        String questionHash = hashQuestion(user.getId(), question, category);
+    public FortuneResponse getFortune(User user, String question, String category, SpreadType spreadType) {
+        String questionHash = hashQuestion(user.getId(), question, category, spreadType);
 
         // Сначала проверяем кэш — повторный запрос того же гадания бесплатен,
         // пользователь уже заплатил за него ранее.
         Optional<Fortune> cached = fortuneRepository.findByUserIdAndQuestionHash(user.getId(), questionHash);
         if (cached.isPresent()) {
-            log.info("Возвращаем кэшированное гадание: userId={}, questionHash={}", user.getId(), questionHash);
+            log.info("Возвращаем кэшированное гадание: userId={}, spreadType={}, questionHash={}",
+                    user.getId(), spreadType, questionHash);
             return buildResponseFromCached(user.getUsername(), cached.get());
         }
 
-        // Новое гадание — списываем кредит ДО вызова AI.
+        // Новое гадание — списываем кредиты ДО вызова AI.
         // Если кредитов нет → InsufficientCreditsException → AI не вызывается.
-        fortuneCreditService.spendCredit(user.getId(), DiaryFeatureType.THREE_CARD);
+        DiaryFeatureType featureType = toFeatureType(spreadType);
+        fortuneCreditService.spendCredits(user.getId(), featureType, spreadType.getCreditCost());
 
-        log.info("Новое гадание для userId={}, категория='{}', выбираем {} карт", user.getId(), category, STD_FORTUNE_CARD_COUNT);
-        List<Card> cards = cardRepository.findRandomCards(STD_FORTUNE_CARD_COUNT);
-        List<CardDto> cardDtoList = spreadService.assignCardPosition(cards);
+        int cardCount = spreadService.getCardCount(spreadType);
+        log.info("Новое гадание: userId={}, spreadType={}, категория='{}', выбираем {} карт", user.getId(), spreadType, category, cardCount);
+
+        List<Card> cards = cardRepository.findRandomCards(cardCount);
+        List<CardDto> cardDtoList = spreadService.assignCardPosition(cards, spreadType);
+
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
         log.debug("Запрашиваем интерпретацию у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
         InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question, category);
 
-        Fortune saved = saveFortune(user.getId(), questionHash, question, result.getCards(), result.getGeneralInterpretation());
-        log.info("Гадание сохранено: fortuneId={}, userId={}", saved.getId(), user.getId());
+        Fortune saved = saveFortune(user.getId(), questionHash, question, spreadType, result.getCards(), result.getGeneralInterpretation());
+        log.info("Гадание сохранено: fortuneId={}, userId={}, spreadType={}", saved.getId(), user.getId(), spreadType);
 
-        FortuneResponse response = new FortuneResponse(user.getUsername(), question, result.getCards(), result.getGeneralInterpretation());
-        diaryService.save(user.getId(), DiaryFeatureType.THREE_CARD, saved.getId(), response);
+        FortuneResponse response = new FortuneResponse(user.getUsername(), question, result.getCards(), result.getGeneralInterpretation(), spreadType);
+        diaryService.save(user.getId(), featureType, saved.getId(), response);
         return response;
     }
 
-    private Fortune saveFortune(Long userId, String questionHash, String question,
+    private Fortune saveFortune(Long userId, String questionHash, String question, SpreadType spreadType,
                                 List<CardDto> cardDtoList, String interpretation) {
         try {
             String cardsJson = objectMapper.writeValueAsString(cardDtoList);
@@ -82,6 +86,7 @@ public class FortuneService {
                     .userId(userId)
                     .questionHash(questionHash)
                     .question(question)
+                    .spreadType(spreadType)
                     .cards(cardsJson)
                     .interpretation(interpretation)
                     .build();
@@ -95,23 +100,38 @@ public class FortuneService {
     private FortuneResponse buildResponseFromCached(String username, Fortune fortune) {
         try {
             List<CardDto> cards = objectMapper.readValue(fortune.getCards(), new TypeReference<>() {});
-            return new FortuneResponse(username, fortune.getQuestion(), cards, fortune.getInterpretation());
+            SpreadType spreadType = fortune.getSpreadType() != null ? fortune.getSpreadType() : SpreadType.THREE_CARD;
+            return new FortuneResponse(username, fortune.getQuestion(), cards,
+                    fortune.getInterpretation(), spreadType);
         } catch (JsonProcessingException e) {
             log.error("Ошибка десериализации карт из кэша гадания, fortuneId={}: {}", fortune.getId(), e.getMessage(), e);
             throw new IllegalStateException("Ошибка чтения сохранённого гадания", e);
         }
     }
 
-    private String hashQuestion(Long userId, String question, String category) {
+    /**
+     * Включает тип расклада в хэш — чтобы один и тот же вопрос с разными раскладами
+     * давал независимые гадания (разные карты и интерпретации).
+     */
+    private String hashQuestion(Long userId, String question, String category, SpreadType spreadType) {
         try {
             String normalizedQuestion = question.trim().toLowerCase();
             String normalizedCategory = category != null ? category.trim().toLowerCase() : "";
-            String input = userId + ":" + normalizedQuestion + ":" + normalizedCategory;
+            String normalizedSpread = spreadType.name().toLowerCase();
+            String input = userId + ":" + normalizedQuestion + ":" + normalizedCategory + ":" + normalizedSpread;
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 недоступен", e);
         }
+    }
+
+    private DiaryFeatureType toFeatureType(SpreadType spreadType) {
+        return switch (spreadType) {
+            case THREE_CARD   -> DiaryFeatureType.THREE_CARD;
+            case HORSESHOE    -> DiaryFeatureType.HORSESHOE;
+            case CELTIC_CROSS -> DiaryFeatureType.CELTIC_CROSS;
+        };
     }
 }

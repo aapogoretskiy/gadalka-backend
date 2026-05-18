@@ -34,7 +34,8 @@ public class FortuneController extends BaseController {
     public FortuneResponse getFortune(@Valid @RequestBody FortuneRequest fortuneRequest,
                                       HttpServletRequest request) {
         profanityFilterService.validate(fortuneRequest.getQuestion());
-        return fortuneService.getFortune(resolveUser(request), fortuneRequest.getQuestion(), fortuneRequest.getCategory());
+        return fortuneService.getFortune(resolveUser(request), fortuneRequest.getQuestion(),
+                fortuneRequest.getCategory(), fortuneRequest.getSpreadType());
     }
 
     @PostMapping("/compatibility/{id}/unlock")

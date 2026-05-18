@@ -2,6 +2,7 @@ package ru.sapa.gadalka_backend.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import ru.sapa.gadalka_backend.domain.type.SpreadType;
 
 import java.time.OffsetDateTime;
 
@@ -34,6 +35,14 @@ public class Fortune {
     @Column(name = "interpretation", nullable = false, columnDefinition = "TEXT")
     private String interpretation;
 
+    /**
+     * Тип расклада. Nullable для обратной совместимости со старыми записями
+     * (до введения новых раскладов); такие записи считаются THREE_CARD.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "spread_type", length = 20)
+    private SpreadType spreadType;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -41,6 +50,9 @@ public class Fortune {
     void prePersist() {
         if (createdAt == null) {
             createdAt = OffsetDateTime.now();
+        }
+        if (spreadType == null) {
+            spreadType = SpreadType.THREE_CARD;
         }
     }
 }

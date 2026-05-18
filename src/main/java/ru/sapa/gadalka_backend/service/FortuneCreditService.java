@@ -94,17 +94,32 @@ public class FortuneCreditService {
 
     /**
      * Списывает 1 гадание за использование функции.
-     * Использует PESSIMISTIC_WRITE lock — защита от гонки при одновременных запросах.
-     * <p>
-     * Если у пользователя нет активной подписки и баланс = 0 → кидает InsufficientCreditsException.
-     * Вызывается ДО выполнения основного действия (AI-запроса и т.д.),
-     * чтобы при нехватке кредитов не тратить ресурсы.
+     * Удобный вариант для фич с фиксированной стоимостью в 1 кредит (совместимость, и т.д.).
      *
      * @param userId      ID пользователя
      * @param featureType тип использованной функции
      */
     @Transactional
     public void spendCredit(Long userId, DiaryFeatureType featureType) {
+        spendCredits(userId, featureType, 1);
+    }
+
+    /**
+     * Списывает {@code count} гаданий за использование функции.
+     * Использует PESSIMISTIC_WRITE lock — защита от гонки при одновременных запросах.
+     * <p>
+     * Если у пользователя нет активной подписки и баланс < count → кидает InsufficientCreditsException.
+     * Вызывается ДО выполнения основного действия (AI-запроса и т.д.),
+     * чтобы при нехватке кредитов не тратить ресурсы.
+     *
+     * @param userId      ID пользователя
+     * @param featureType тип использованной функции
+     * @param count       количество кредитов для списания (≥ 1)
+     */
+    @Transactional
+    public void spendCredits(Long userId, DiaryFeatureType featureType, int count) {
+        if (count <= 0) throw new IllegalArgumentException("Количество списываемых кредитов должно быть > 0");
+
         // Пользователи с активной подпиской не тратят кредиты
         boolean hasSubscription = subscriptionRepository
                 .findActiveByUserId(userId, OffsetDateTime.now())
@@ -115,26 +130,27 @@ public class FortuneCreditService {
             return;
         }
 
-        // Берём строку с блокировкой, чтобы два одновременных запроса не потратили один кредит
+        // Берём строку с блокировкой, чтобы два одновременных запроса не потратили одни кредиты
         UserFortuneCredit credit = creditRepository.findByUserIdForUpdate(userId)
                 .orElseThrow(InsufficientCreditsException::new);
 
-        if (credit.getBalance() <= 0) {
-            log.info("Недостаточно гаданий: userId={}, feature={}", userId, featureType);
+        if (credit.getBalance() < count) {
+            log.info("Недостаточно гаданий: userId={}, feature={}, нужно={}, есть={}",
+                    userId, featureType, count, credit.getBalance());
             throw new InsufficientCreditsException();
         }
 
-        credit.setBalance(credit.getBalance() - 1);
+        credit.setBalance(credit.getBalance() - count);
         creditRepository.save(credit);
 
         creditLogRepository.save(FortuneCreditLogEntry.builder()
                 .userId(userId)
-                .delta(-1)
+                .delta(-count)
                 .reason(CreditTransactionReason.FEATURE_SPEND)
                 .featureType(featureType)
                 .build());
 
-        log.info("Списано 1 гадание: userId={}, feature={}, remainingBalance={}",
-                userId, featureType, credit.getBalance());
+        log.info("Списано {} гаданий: userId={}, feature={}, remainingBalance={}",
+                count, userId, featureType, credit.getBalance());
     }
 }
