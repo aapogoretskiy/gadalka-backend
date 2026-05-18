@@ -41,11 +41,17 @@ jwt:
   secret: ${JWT_SECRET}
 
 # ЮKassa — платёжный провайдер для рублёвых платежей
-# Тестовые credentials: получить на yookassa.ru после регистрации
-# Боевые credentials: выдаются после верификации ИП
 yookassa:
+  # Боевые credentials (всегда должны быть заданы в продакшне)
   shop-id: ${YOOKASSA_SHOP_ID}
   secret-key: ${YOOKASSA_SECRET_KEY}
+  # Тестовые credentials (нужны только при test-mode=true)
+  test-shop-id: ${YOOKASSA_TEST_SHOP_ID:#{null}}
+  test-secret-key: ${YOOKASSA_TEST_SECRET_KEY:#{null}}
+  # test-mode=true → используются тестовые credentials вместо боевых.
+  # Автоматически включается через application-dev.yaml при dev-профиле.
+  # Можно переопределить переменной окружения YOOKASSA_TEST_MODE=true.
+  test-mode: ${YOOKASSA_TEST_MODE:false}
   api-url: https://api.yookassa.ru/v3
   # URL куда ЮKassa перенаправит пользователя после оплаты
   return-url: ${YOOKASSA_RETURN_URL:https://magicliora.com/payment/result}
