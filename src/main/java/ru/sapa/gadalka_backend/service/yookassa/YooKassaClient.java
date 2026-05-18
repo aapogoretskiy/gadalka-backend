@@ -1,6 +1,5 @@
 package ru.sapa.gadalka_backend.service.yookassa;
 
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -28,39 +27,17 @@ public class YooKassaClient {
 
     private final WebClient webClient;
     private final String returnUrl;
-    @Getter
-    private final boolean testMode;
 
     public YooKassaClient(
             @Value("${yookassa.shop-id}") String shopId,
             @Value("${yookassa.secret-key}") String secretKey,
-            @Value("${yookassa.test-shop-id:#{null}}") String testShopId,
-            @Value("${yookassa.test-secret-key:#{null}}") String testSecretKey,
-            @Value("${yookassa.test-mode:false}") boolean testMode,
             @Value("${yookassa.api-url}") String apiUrl,
             @Value("${yookassa.return-url}") String returnUrl) {
 
         this.returnUrl = returnUrl;
-        this.testMode = testMode;
-
-        // В test-mode используем тестовые credentials, если они заданы
-        String effectiveShopId;
-        String effectiveSecretKey;
-        if (testMode && testShopId != null && testSecretKey != null) {
-            effectiveShopId = testShopId;
-            effectiveSecretKey = testSecretKey;
-            log.info("ЮKassa запущена в ТЕСТОВОМ режиме (shopId={})", effectiveShopId);
-        } else {
-            if (testMode) {
-                log.warn("ЮKassa test-mode=true, но тестовые credentials не заданы — используем боевые!");
-            }
-            effectiveShopId = shopId;
-            effectiveSecretKey = secretKey;
-            log.info("ЮKassa запущена в БОЕВОМ режиме (shopId={})", effectiveShopId);
-        }
 
         // Basic Auth заголовок: Base64(shopId:secretKey)
-        String credentials = effectiveShopId + ":" + effectiveSecretKey;
+        String credentials = shopId + ":" + secretKey;
         String basicAuth = "Basic " + Base64.getEncoder()
                 .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
 
@@ -69,6 +46,8 @@ public class YooKassaClient {
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basicAuth)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
+
+        log.info("ЮKassa клиент инициализирован (shopId={})", shopId);
     }
 
     /**
