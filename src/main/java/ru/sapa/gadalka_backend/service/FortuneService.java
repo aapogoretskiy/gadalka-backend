@@ -73,7 +73,7 @@ public class FortuneService {
         Fortune saved = saveFortune(user.getId(), questionHash, question, spreadType, result.getCards(), result.getGeneralInterpretation());
         log.info("Гадание сохранено: fortuneId={}, userId={}, spreadType={}", saved.getId(), user.getId(), spreadType);
 
-        FortuneResponse response = new FortuneResponse(user.getUsername(), question, result.getCards(), result.getGeneralInterpretation(), spreadType);
+        FortuneResponse response = new FortuneResponse(saved.getId(), user.getUsername(), question, result.getCards(), result.getGeneralInterpretation(), spreadType);
         diaryService.save(user.getId(), featureType, saved.getId(), response);
         return response;
     }
@@ -101,7 +101,7 @@ public class FortuneService {
         try {
             List<CardDto> cards = objectMapper.readValue(fortune.getCards(), new TypeReference<>() {});
             SpreadType spreadType = fortune.getSpreadType() != null ? fortune.getSpreadType() : SpreadType.THREE_CARD;
-            return new FortuneResponse(username, fortune.getQuestion(), cards,
+            return new FortuneResponse(fortune.getId(), username, fortune.getQuestion(), cards,
                     fortune.getInterpretation(), spreadType);
         } catch (JsonProcessingException e) {
             log.error("Ошибка десериализации карт из кэша гадания, fortuneId={}: {}", fortune.getId(), e.getMessage(), e);
