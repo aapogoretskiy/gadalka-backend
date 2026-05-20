@@ -153,4 +153,38 @@ public class FortuneCreditService {
         log.info("Списано {} гаданий: userId={}, feature={}, remainingBalance={}",
                 count, userId, featureType, credit.getBalance());
     }
+
+    /**
+     * Списывает кредиты за покупку темы карт.
+     * Не требует DiaryFeatureType — покупка темы не является использованием функции гадания.
+     * Использует защиту от гонки (PESSIMISTIC_WRITE lock).
+     *
+     * @param userId ID пользователя
+     * @param cost   стоимость темы в кредитах
+     */
+    @Transactional
+    public void spendCreditsForTheme(Long userId, int cost) {
+        if (cost <= 0) throw new IllegalArgumentException("Стоимость темы должна быть > 0");
+
+        UserFortuneCredit credit = creditRepository.findByUserIdForUpdate(userId)
+                .orElseThrow(InsufficientCreditsException::new);
+
+        if (credit.getBalance() < cost) {
+            log.info("Недостаточно гаданий для покупки темы: userId={}, нужно={}, есть={}",
+                    userId, cost, credit.getBalance());
+            throw new InsufficientCreditsException();
+        }
+
+        credit.setBalance(credit.getBalance() - cost);
+        creditRepository.save(credit);
+
+        creditLogRepository.save(FortuneCreditLogEntry.builder()
+                .userId(userId)
+                .delta(-cost)
+                .reason(CreditTransactionReason.THEME_PURCHASE)
+                .build());
+
+        log.info("Списано {} гаданий за покупку темы: userId={}, remainingBalance={}",
+                cost, userId, credit.getBalance());
+    }
 }

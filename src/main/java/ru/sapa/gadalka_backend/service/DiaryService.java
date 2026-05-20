@@ -152,7 +152,7 @@ public class DiaryService {
     private DailyCardResponse resolveDailyCardPayload(Long userId, Long referenceId) {
         DailyCard dailyCard = dailyCardRepository.findByIdAndUserId(referenceId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Карта дня не найдена"));
-        return cardMapper.toDailyCardDto(dailyCard);
+        return cardMapper.toDailyCardDto(dailyCard, null);
     }
 
     private JsonNode resolveNumerologyDayPayload(Long userId, Long referenceId) {
