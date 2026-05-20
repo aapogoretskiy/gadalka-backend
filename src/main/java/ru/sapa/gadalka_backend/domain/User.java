@@ -45,6 +45,9 @@ public class User {
     @Column(name = "referral_source", length = 255)
     private String referralSource;
 
+    @Column(name = "active_theme_id")
+    private Long activeThemeId;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

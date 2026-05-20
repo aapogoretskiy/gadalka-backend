@@ -14,6 +14,8 @@ import ru.sapa.gadalka_backend.exception.FreeFortuneAlreadyUsedException;
 import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.exception.ProductNotFoundException;
+import ru.sapa.gadalka_backend.exception.ThemeAlreadyOwnedException;
+import ru.sapa.gadalka_backend.exception.ThemeNotFoundException;
 
 import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
@@ -51,6 +53,28 @@ public class GlobalExceptionHandler {
         log.warn("Платёж не найден: uri={}, msg={}", request.getRequestURI(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse(HttpStatus.NOT_FOUND.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    @ExceptionHandler(ThemeNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleThemeNotFound(ThemeNotFoundException ex,
+                                                              HttpServletRequest request) {
+        log.warn("Тема не найдена: uri={}, msg={}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(HttpStatus.NOT_FOUND.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    @ExceptionHandler(ThemeAlreadyOwnedException.class)
+    public ResponseEntity<ErrorResponse> handleThemeAlreadyOwned(ThemeAlreadyOwnedException ex,
+                                                                   HttpServletRequest request) {
+        log.info("Попытка повторной покупки темы: uri={}", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(HttpStatus.CONFLICT.value(),
                         ex.getMessage(),
                         request.getRequestURI(),
                         LocalDateTime.now()));

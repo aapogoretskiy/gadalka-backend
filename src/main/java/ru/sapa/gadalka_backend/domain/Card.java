@@ -36,4 +36,7 @@ public class Card {
 
     @Column(name = "image_url")
     private String imageUrl;
+
+    @Column(name = "slug", length = 100)
+    private String slug;
 }
