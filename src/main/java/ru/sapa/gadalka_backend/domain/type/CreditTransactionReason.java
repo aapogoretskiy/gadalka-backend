@@ -8,5 +8,7 @@ public enum CreditTransactionReason {
     /** Бесплатное начальное гадание при регистрации */
     FREE_GRANT,
     /** Возврат кредитов при рефанде */
-    REFUND
+    REFUND,
+    /** Покупка темы (колоды) карт */
+    THEME_PURCHASE
 }

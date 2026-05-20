@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.card.DailyCardResponse;
 import ru.sapa.gadalka_backend.domain.Card;
+import ru.sapa.gadalka_backend.domain.CardDeckTheme;
 import ru.sapa.gadalka_backend.domain.DailyCard;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
@@ -21,6 +22,7 @@ public class DailyCardService {
     private final DailyCardRepository dailyCardRepository;
     private final CardRepository cardRepository;
     private final DiaryService diaryService;
+    private final ThemeService themeService;
 
     @Transactional
     public DailyCardResponse getDailyCard(Long userId) {
@@ -28,8 +30,8 @@ public class DailyCardService {
 
         DailyCard dailyCard = dailyCardRepository.findByUserIdAndDate(userId, today)
                 .orElseGet(() -> createDailyCard(userId, today));
-
-        return cardMapper.toDailyCardDto(dailyCard);
+        CardDeckTheme activeTheme = themeService.resolveActiveTheme(userId);
+        return cardMapper.toDailyCardDto(dailyCard, activeTheme);
     }
 
     private DailyCard createDailyCard(Long userId, LocalDate today) {
@@ -42,8 +44,8 @@ public class DailyCardService {
                 .build();
 
         dailyCardRepository.save(dailyCard);
-
-        DailyCardResponse response = cardMapper.toDailyCardDto(dailyCard);
+        CardDeckTheme activeTheme = themeService.resolveActiveTheme(userId);
+        DailyCardResponse response = cardMapper.toDailyCardDto(dailyCard, activeTheme);
         diaryService.save(userId, DiaryFeatureType.DAILY_CARD, dailyCard.getId(), response);
 
         return dailyCard;
