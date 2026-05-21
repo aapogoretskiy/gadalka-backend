@@ -10,10 +10,12 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
 import ru.sapa.gadalka_backend.domain.Card;
+import ru.sapa.gadalka_backend.domain.CardDeckTheme;
 import ru.sapa.gadalka_backend.domain.Fortune;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
+import ru.sapa.gadalka_backend.mapper.CardMapper;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
@@ -41,10 +43,15 @@ public class FortuneService {
     private final DiaryService diaryService;
     private final FortuneCreditService fortuneCreditService;
     private final ObjectMapper objectMapper;
+    private final ThemeService themeService;
+    private final CardMapper cardMapper;
 
     @Transactional
     public FortuneResponse getFortune(User user, String question, String category, SpreadType spreadType) {
         String questionHash = hashQuestion(user.getId(), question, category, spreadType);
+
+        // Резолвим активную тему один раз — используется и для нового гадания, и для кэша
+        CardDeckTheme activeTheme = themeService.resolveActiveTheme(user.getId());
 
         // Сначала проверяем кэш — повторный запрос того же гадания бесплатен,
         // пользователь уже заплатил за него ранее.
@@ -52,7 +59,7 @@ public class FortuneService {
         if (cached.isPresent()) {
             log.info("Возвращаем кэшированное гадание: userId={}, spreadType={}, questionHash={}",
                     user.getId(), spreadType, questionHash);
-            return buildResponseFromCached(user.getUsername(), cached.get());
+            return buildResponseFromCached(user.getUsername(), cached.get(), activeTheme);
         }
 
         // Новое гадание — списываем кредиты ДО вызова AI.
@@ -64,7 +71,7 @@ public class FortuneService {
         log.info("Новое гадание: userId={}, spreadType={}, категория='{}', выбираем {} карт", user.getId(), spreadType, category, cardCount);
 
         List<Card> cards = cardRepository.findRandomCards(cardCount);
-        List<CardDto> cardDtoList = spreadService.assignCardPosition(cards, spreadType);
+        List<CardDto> cardDtoList = spreadService.assignCardPosition(cards, spreadType, activeTheme);
 
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
         log.debug("Запрашиваем интерпретацию у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
@@ -97,10 +104,29 @@ public class FortuneService {
         }
     }
 
-    private FortuneResponse buildResponseFromCached(String username, Fortune fortune) {
+    /**
+     * Строит ответ из кэшированного гадания.
+     * imageUrl не хранится в JSON — пересчитываем по текущей активной теме пользователя.
+     * Это значит что при смене темы старые гадания покажут картинки из новой темы — ожидаемое поведение.
+     */
+    private FortuneResponse buildResponseFromCached(String username, Fortune fortune, CardDeckTheme activeTheme) {
         try {
             List<CardDto> cards = objectMapper.readValue(fortune.getCards(), new TypeReference<>() {});
             SpreadType spreadType = fortune.getSpreadType() != null ? fortune.getSpreadType() : SpreadType.THREE_CARD;
+
+            // Пересчитываем imageUrl: загружаем Card-сущности по id и резолвим через CardMapper
+            List<Long> cardIds = cards.stream().map(CardDto::getId).toList();
+            java.util.Map<Long, Card> cardById = cardRepository.findAllById(cardIds)
+                    .stream()
+                    .collect(java.util.stream.Collectors.toMap(Card::getId, c -> c));
+
+            cards.forEach(dto -> {
+                Card card = cardById.get(dto.getId());
+                if (card != null) {
+                    dto.setImageUrl(cardMapper.resolveImageUrl(card, activeTheme));
+                }
+            });
+
             return new FortuneResponse(fortune.getId(), username, fortune.getQuestion(), cards,
                     fortune.getInterpretation(), spreadType);
         } catch (JsonProcessingException e) {

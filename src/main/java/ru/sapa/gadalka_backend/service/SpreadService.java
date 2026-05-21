@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
 import ru.sapa.gadalka_backend.api.dto.card.CardPosition;
 import ru.sapa.gadalka_backend.domain.Card;
+import ru.sapa.gadalka_backend.domain.CardDeckTheme;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
 
@@ -52,16 +53,18 @@ public class SpreadService {
     private final CardMapper cardMapper;
 
     /**
-     * Назначает позиции картам согласно типу расклада.
+     * Назначает позиции картам согласно типу расклада с учётом активной темы.
+     *
+     * @param theme активная тема пользователя (может быть null)
      */
-    public List<CardDto> assignCardPosition(List<Card> cards, SpreadType spreadType) {
+    public List<CardDto> assignCardPosition(List<Card> cards, SpreadType spreadType, CardDeckTheme theme) {
         List<CardPosition> positions = getPositions(spreadType);
         if (cards.size() != positions.size()) {
             log.warn("Несоответствие: карт={}, позиций={} для расклада {}", cards.size(), positions.size(), spreadType);
         }
         List<CardDto> cardDtoList = new ArrayList<>();
         for (int i = 0; i < cards.size(); i++) {
-            CardDto cardDto = cardMapper.toDto(cards.get(i));
+            CardDto cardDto = cardMapper.toDto(cards.get(i), theme);
             cardDto.setCardPosition(positions.get(i));
             cardDtoList.add(cardDto);
         }

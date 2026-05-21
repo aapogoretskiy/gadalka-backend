@@ -13,10 +13,21 @@ import java.util.Objects;
 public class CardMapper {
 
     public CardDto toDto(Card card) {
+        return toDto(card, null);
+    }
+
+    /**
+     * Конвертирует Card в CardDto с учётом активной темы пользователя.
+     *
+     * @param card  сущность карты
+     * @param theme активная тема (может быть null — тогда imageUrl берётся из card.imageUrl)
+     */
+    public CardDto toDto(Card card, CardDeckTheme theme) {
         return CardDto.builder()
                 .id(card.getId())
                 .name(card.getName())
                 .meaning(card.getMeaning())
+                .imageUrl(resolveImageUrl(card, theme))
                 .build();
     }
 

@@ -15,4 +15,5 @@ public class CardDto {
     private String meaning;
     private CardPosition cardPosition;
     private String interpretation;
+    private String imageUrl;
 }
