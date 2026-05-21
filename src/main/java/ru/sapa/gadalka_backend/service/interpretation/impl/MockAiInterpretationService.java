@@ -27,6 +27,7 @@ public class MockAiInterpretationService implements AiInterpretationService {
                         .meaning(card.getMeaning())
                         .cardPosition(card.getCardPosition())
                         .interpretation("Карта " + card.getName() + " в позиции «" + translatePosition(card.getCardPosition()) + "» указывает на перемены.")
+                        .imageUrl(card.getImageUrl())
                         .build())
                 .toList();
 

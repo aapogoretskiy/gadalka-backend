@@ -52,6 +52,7 @@ public class OpenAiInterpretationService implements AiInterpretationService {
                             .meaning(card.getMeaning())
                             .cardPosition(card.getCardPosition())
                             .interpretation(cardInterpretation)
+                            .imageUrl(card.getImageUrl())
                             .build();
                 })
                 .toList();
