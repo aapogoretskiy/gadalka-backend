@@ -1,6 +1,5 @@
 package ru.sapa.gadalka_backend.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,86 +10,95 @@ import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
-import ru.sapa.gadalka_backend.service.stars.TelegramStarsService;
-import ru.sapa.gadalka_backend.service.yookassa.YooKassaClient;
 import ru.sapa.gadalka_backend.service.yookassa.YooKassaWebhookParser;
-import ru.sapa.gadalka_backend.service.yookassa.dto.YooKassaPaymentResponse;
 import ru.sapa.gadalka_backend.service.yookassa.dto.YooKassaWebhookPayload;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Оркестратор платёжного процесса.
- * Координирует: создание Payment, вызов провайдеров, начисление кредитов.
+ * <p>
+ * Координирует: создание Payment, вызов провайдера через стратегию, начисление кредитов.
+ * <p>
+ * Чтобы добавить нового провайдера — достаточно реализовать {@link PaymentProviderStrategy}
+ * и пометить класс {@code @Component}. Этот сервис не нужно трогать.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final ProductCatalogService productCatalogService;
     private final FortuneCreditService fortuneCreditService;
-    private final YooKassaClient yooKassaClient;
     private final YooKassaWebhookParser webhookParser;
-    private final TelegramStarsService starsService;
+
+    /**
+     * Registry стратегий: PaymentProvider → реализация.
+     * Spring инжектирует все бины, реализующие PaymentProviderStrategy, как список.
+     */
+    private final Map<PaymentProvider, PaymentProviderStrategy> strategyRegistry;
+
+    public PaymentService(
+            PaymentRepository paymentRepository,
+            ProductCatalogService productCatalogService,
+            FortuneCreditService fortuneCreditService,
+            YooKassaWebhookParser webhookParser,
+            List<PaymentProviderStrategy> strategies) {
+
+        this.paymentRepository = paymentRepository;
+        this.productCatalogService = productCatalogService;
+        this.fortuneCreditService = fortuneCreditService;
+        this.webhookParser = webhookParser;
+
+        // Собираем registry: каждая стратегия сама заявляет свой provider()
+        this.strategyRegistry = strategies.stream()
+                .collect(Collectors.toMap(PaymentProviderStrategy::provider, s -> s));
+
+        log.info("Платёжные стратегии загружены: {}", strategyRegistry.keySet());
+    }
 
     // ──────────────────────────────────────────────
-    // Создание платежей
+    // Создание платежей (единая точка входа)
     // ──────────────────────────────────────────────
 
     /**
-     * Инициирует платёж через ЮKassa.
-     * Создаёт Payment(PENDING) → вызывает ЮKassa API → возвращает URL для редиректа.
-     *
-     * @return URL страницы оплаты ЮKassa
+     * Инициирует платёж через указанного провайдера.
+     * Возвращает URL, который нужно передать пользователю
+     * (страница оплаты ЮKassa, invoice link Telegram Stars, ...).
      */
     @Transactional
-    public String createYooKassaPayment(Long userId, String productCode) {
+    public String createPayment(Long userId, String productCode, PaymentProvider provider) {
+        PaymentProviderStrategy strategy = getStrategy(provider);
         PaymentProduct product = productCatalogService.getActiveProduct(productCode);
 
-        // Сначала сохраняем платёж в БД — нам нужен его ID как idempotency key для ЮKassa
-        Payment payment = createPendingPayment(userId, product, PaymentProvider.YOOKASSA,
-                product.getPriceRub(), "RUB");
+        // Создаём Payment(PENDING) — нужен ID для передачи провайдеру
+        Payment payment = Payment.builder()
+                .userId(userId)
+                .productCode(product.getCode())
+                .provider(provider)
+                .status(PaymentStatus.PENDING)
+                .amountMinor(strategy.getAmountMinor(product))
+                .currency(strategy.getCurrency())
+                .creditsToGrant(product.getReadingsCount())
+                .build();
+        payment = paymentRepository.save(payment);
 
-        // Вызываем ЮKassa API
-        YooKassaPaymentResponse response = yooKassaClient.createPayment(
-                payment.getId(),
-                product.getPriceRub(),
-                "Покупка: " + product.getName()
-        );
+        // Вызываем провайдера — он может мутировать payment (например, установить providerPaymentId)
+        String url = strategy.initiatePayment(payment, product);
 
-        // Сохраняем ID платежа от ЮKassa — он нужен для идемпотентности webhook
-        payment.setProviderPaymentId(response.getId());
+        // Сохраняем после вызова — фиксируем любые изменения от провайдера
         paymentRepository.save(payment);
 
-        log.info("Платёж ЮKassa создан: internalId={}, yookassaId={}, userId={}, product={}",
-                payment.getId(), response.getId(), userId, productCode);
+        log.info("Платёж инициирован: internalId={}, provider={}, userId={}, product={}",
+                payment.getId(), provider, userId, productCode);
 
-        return response.getConfirmationUrl();
-    }
-
-    /**
-     * Инициирует платёж через Telegram Stars.
-     * Создаёт Payment(PENDING) → создаёт invoice link → возвращает его фронту.
-     *
-     * @return invoice URL для Telegram.WebApp.openInvoice()
-     */
-    @Transactional
-    public String createStarsPayment(Long userId, String productCode) {
-        PaymentProduct product = productCatalogService.getActiveProduct(productCode);
-
-        Payment payment = createPendingPayment(userId, product, PaymentProvider.TELEGRAM_STARS,
-                product.getPriceStars(), "XTR");
-
-        String invoiceLink = starsService.createInvoiceLink(payment.getId(), product);
-
-        log.info("Stars-инвойс создан: internalId={}, userId={}, product={}, stars={}",
-                payment.getId(), userId, productCode, product.getPriceStars());
-
-        return invoiceLink;
+        return url;
     }
 
     // ──────────────────────────────────────────────
-    // Обработка результатов
+    // Обработка результатов (провайдер-специфично)
     // ──────────────────────────────────────────────
 
     /**
@@ -115,7 +123,6 @@ public class PaymentService {
      */
     @Transactional
     public void processStarsSuccess(Long internalPaymentId, String telegramChargeId) {
-        // Идемпотентность: если уже обработали — просто логируем и выходим
         if (paymentRepository.existsByProviderPaymentIdAndStatus(telegramChargeId, PaymentStatus.SUCCEEDED)) {
             log.warn("Stars платёж уже обработан: chargeId={}", telegramChargeId);
             return;
@@ -132,26 +139,19 @@ public class PaymentService {
     // Вспомогательные методы
     // ──────────────────────────────────────────────
 
-    private Payment createPendingPayment(Long userId, PaymentProduct product,
-                                          PaymentProvider provider, int amountMinor, String currency) {
-        Payment payment = Payment.builder()
-                .userId(userId)
-                .productCode(product.getCode())
-                .provider(provider)
-                .status(PaymentStatus.PENDING)
-                .amountMinor(amountMinor)
-                .currency(currency)
-                // Фиксируем количество гаданий на момент создания платежа
-                .creditsToGrant(product.getReadingsCount())
-                .build();
-        return paymentRepository.save(payment);
+    private PaymentProviderStrategy getStrategy(PaymentProvider provider) {
+        PaymentProviderStrategy strategy = strategyRegistry.get(provider);
+        if (strategy == null) {
+            throw new IllegalStateException(
+                    "Нет зарегистрированной стратегии для провайдера: " + provider);
+        }
+        return strategy;
     }
 
     @Transactional
     protected void handleYooKassaSuccess(YooKassaWebhookPayload payload) {
         String yookassaPaymentId = payload.getYookassaPaymentId();
 
-        // Идемпотентность: уже обработали — выходим
         if (paymentRepository.existsByProviderPaymentIdAndStatus(yookassaPaymentId, PaymentStatus.SUCCEEDED)) {
             log.warn("ЮKassa платёж уже обработан: yookassaId={}", yookassaPaymentId);
             return;

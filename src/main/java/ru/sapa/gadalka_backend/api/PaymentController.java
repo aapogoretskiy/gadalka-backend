@@ -53,33 +53,30 @@ public class PaymentController extends BaseController {
     }
 
     /**
-     * POST /api/v1/payments/yookassa/create
-     * Создаёт платёж через ЮKassa. Возвращает URL страницы оплаты.
-     * Фронт редиректит пользователя на этот URL.
+     * POST /api/v1/payments/{provider}/create
+     * Универсальный эндпоинт создания платежа для любого провайдера.
+     * <p>
+     * Примеры:
+     * <ul>
+     *   <li>{@code POST /payments/yookassa/create} — платёж через ЮKassa</li>
+     *   <li>{@code POST /payments/stars/create}    — платёж через Telegram Stars</li>
+     * </ul>
+     * <p>
+     * Конвертация "yookassa" / "stars" → {@link PaymentProvider} происходит через
+     * {@code PaymentProviderConverter}, зарегистрированный в Spring MVC.
+     * <p>
+     * Чтобы добавить нового провайдера — не нужно трогать этот файл:
+     * достаточно создать {@code PaymentProviderStrategy} + добавить маппинг в конвертер.
      */
-    @PostMapping("/yookassa/create")
-    public ResponseEntity<CreatePaymentResponse> createYooKassaPayment(
+    @PostMapping("/{provider}/create")
+    public ResponseEntity<CreatePaymentResponse> createPayment(
+            @PathVariable PaymentProvider provider,
             @Valid @RequestBody CreatePaymentRequest body,
             HttpServletRequest request) {
 
         User user = resolveUser(request);
-        String confirmationUrl = paymentService.createYooKassaPayment(user.getId(), body.getProductCode());
-        return ResponseEntity.ok(new CreatePaymentResponse(confirmationUrl));
-    }
-
-    /**
-     * POST /api/v1/payments/stars/create
-     * Создаёт инвойс Telegram Stars. Возвращает invoice URL.
-     * Фронт передаёт его в Telegram.WebApp.openInvoice(url, callback).
-     */
-    @PostMapping("/stars/create")
-    public ResponseEntity<CreatePaymentResponse> createStarsPayment(
-            @Valid @RequestBody CreatePaymentRequest body,
-            HttpServletRequest request) {
-
-        User user = resolveUser(request);
-        String invoiceUrl = paymentService.createStarsPayment(user.getId(), body.getProductCode());
-        return ResponseEntity.ok(new CreatePaymentResponse(invoiceUrl));
+        String url = paymentService.createPayment(user.getId(), body.getProductCode(), provider);
+        return ResponseEntity.ok(new CreatePaymentResponse(url));
     }
 
     /**
@@ -88,11 +85,13 @@ public class PaymentController extends BaseController {
      * <p>
      * ВАЖНО: этот эндпоинт должен ответить HTTP 200 как можно быстрее.
      * Реальная обработка происходит асинхронно в PaymentWebhookAckService.
+     * <p>
+     * Webhook специфичен для ЮKassa — у Telegram Stars callback приходит
+     * через Bot update, а не HTTP. Поэтому эндпоинт остаётся отдельным.
      */
     @PostMapping("/yookassa/webhook")
     public ResponseEntity<Void> yookassaWebhook(@RequestBody String rawPayload) {
         log.debug("Получен webhook от ЮKassa, длина payload: {} байт", rawPayload.length());
-        // Сохраняем сырой payload за ~1мс — обработка асинхронная
         webhookAckService.acknowledge(PaymentProvider.YOOKASSA, rawPayload);
         return ResponseEntity.ok().build();
     }
