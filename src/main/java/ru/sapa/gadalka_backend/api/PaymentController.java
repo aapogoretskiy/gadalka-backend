@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,6 +30,13 @@ public class PaymentController extends BaseController {
     private final PaymentWebhookAckService webhookAckService;
 
     /**
+     * Активный провайдер рублёвых платежей.
+     * Управляется переменной PAYMENT_RUB_PROVIDER. По умолчанию: robokassa.
+     */
+    @Value("${payment.rub-provider:robokassa}")
+    private String rubProvider;
+
+    /**
      * GET /api/v1/payments/products
      * Каталог продуктов — без авторизации, для отображения на экране покупки.
      */
@@ -39,6 +47,17 @@ public class PaymentController extends BaseController {
                 .map(PaymentProductDto::from)
                 .toList();
         return ResponseEntity.ok(products);
+    }
+
+    /**
+     * GET /api/v1/payments/config
+     * Конфигурация платёжной системы для фронтенда — без авторизации.
+     * Позволяет переключать провайдера рублёвых платежей через PAYMENT_RUB_PROVIDER
+     * без передеплоя фронтенда.
+     */
+    @GetMapping("/config")
+    public ResponseEntity<PaymentConfigResponse> getConfig() {
+        return ResponseEntity.ok(new PaymentConfigResponse(rubProvider));
     }
 
     /**

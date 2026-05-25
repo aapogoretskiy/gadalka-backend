@@ -66,9 +66,13 @@ robokassa:
     # В продакшне всегда true
     ip-filter-enabled: ${ROBOKASSA_WEBHOOK_IP_FILTER_ENABLED:true}
 
-# Scheduler для обработки очереди webhook'ов
-# fixedDelay: задержка между окончанием предыдущего и началом следующего запуска (мс)
+# Настройки платёжной системы
 payment:
+  # Активный провайдер рублёвых платежей: robokassa | yookassa
+  # Переключается через PAYMENT_RUB_PROVIDER без передеплоя фронтенда
+  rub-provider: ${PAYMENT_RUB_PROVIDER:robokassa}
+  # Scheduler для обработки очереди webhook'ов
+  # fixedDelay: задержка между окончанием предыдущего и началом следующего запуска (мс)
   webhook:
     process-delay-ms: ${PAYMENT_WEBHOOK_PROCESS_DELAY_MS:30000}
 
