@@ -48,6 +48,21 @@ public class User {
     @Column(name = "active_theme_id")
     private Long activeThemeId;
 
+    /**
+     * Серверный timestamp момента принятия пользовательского соглашения и политики конфиденциальности.
+     * Проставляется при завершении онбординга (создании профиля).
+     * Для существующих пользователей — null.
+     */
+    @Column(name = "terms_accepted_at")
+    private OffsetDateTime termsAcceptedAt;
+
+    /**
+     * Версия принятых юридических документов (формат YYYY-MM-DD, например "2025-04-28").
+     * Позволяет отслеживать, по какой версии документов получено согласие.
+     */
+    @Column(name = "terms_version", length = 50)
+    private String termsVersion;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

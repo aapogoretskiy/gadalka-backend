@@ -11,6 +11,7 @@ import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
 @Service
@@ -42,6 +43,11 @@ public class UserProfileService {
                 .build();
 
         userProfileRepository.save(userProfile);
+
+        // Фиксируем факт принятия юридических документов (152-ФЗ)
+        user.setTermsAcceptedAt(OffsetDateTime.now());
+        user.setTermsVersion(createRequest.termsVersion());
+        userRepository.save(user);
 
         return map(userProfile);
     }

@@ -13,8 +13,8 @@ public record CreateProfileRequest(
         @Schema(type = "string", example = "12:30:00")
         @JsonFormat(pattern = "HH:mm:ss")
         LocalTime birthTime,
-
         String birthCity,
-        Set<Goal> goals
+        Set<Goal> goals,
+        String termsVersion
 ) {
 }
