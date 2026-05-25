@@ -25,9 +25,10 @@ public class PaymentProviderConverter implements Converter<String, PaymentProvid
         return switch (source.toLowerCase()) {
             case "yookassa"                -> PaymentProvider.YOOKASSA;
             case "stars", "telegram_stars" -> PaymentProvider.TELEGRAM_STARS;
+            case "robokassa"               -> PaymentProvider.ROBOKASSA;
             default -> throw new IllegalArgumentException(
                     "Неизвестный платёжный провайдер: '" + source + "'. " +
-                    "Доступные: yookassa, stars");
+                    "Доступные: yookassa, stars, robokassa");
         };
     }
 }

@@ -53,6 +53,19 @@ yookassa:
     # В продакшне всегда true
     ip-filter-enabled: ${YOOKASSA_WEBHOOK_IP_FILTER_ENABLED:true}
 
+# Robokassa — платёжный провайдер с автофискализацией для СМЗ
+robokassa:
+  merchant-login: ${ROBOKASSA_MERCHANT_LOGIN}
+  password1: ${ROBOKASSA_PASSWORD1}
+  password2: ${ROBOKASSA_PASSWORD2}
+  # true = тестовый режим (параметр IsTest=1 в URL, деньги не списываются)
+  test-mode: ${ROBOKASSA_TEST_MODE:true}
+  webhook:
+    # Фильтрация запросов на ResultURL по IP-адресам Robokassa
+    # В dev отключить: ROBOKASSA_WEBHOOK_IP_FILTER_ENABLED=false
+    # В продакшне всегда true
+    ip-filter-enabled: ${ROBOKASSA_WEBHOOK_IP_FILTER_ENABLED:true}
+
 # Scheduler для обработки очереди webhook'ов
 # fixedDelay: задержка между окончанием предыдущего и началом следующего запуска (мс)
 payment:

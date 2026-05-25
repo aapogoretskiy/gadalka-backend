@@ -10,6 +10,7 @@ import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
+import ru.sapa.gadalka_backend.service.robokassa.RobokassaWebhookParser;
 import ru.sapa.gadalka_backend.service.yookassa.YooKassaWebhookParser;
 import ru.sapa.gadalka_backend.service.yookassa.dto.YooKassaWebhookPayload;
 
@@ -32,7 +33,8 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final ProductCatalogService productCatalogService;
     private final FortuneCreditService fortuneCreditService;
-    private final YooKassaWebhookParser webhookParser;
+    private final YooKassaWebhookParser yooKassaWebhookParser;
+    private final RobokassaWebhookParser robokassaWebhookParser;
 
     /**
      * Registry стратегий: PaymentProvider → реализация.
@@ -44,13 +46,15 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             ProductCatalogService productCatalogService,
             FortuneCreditService fortuneCreditService,
-            YooKassaWebhookParser webhookParser,
+            YooKassaWebhookParser yooKassaWebhookParser,
+            RobokassaWebhookParser robokassaWebhookParser,
             List<PaymentProviderStrategy> strategies) {
 
         this.paymentRepository = paymentRepository;
         this.productCatalogService = productCatalogService;
         this.fortuneCreditService = fortuneCreditService;
-        this.webhookParser = webhookParser;
+        this.yooKassaWebhookParser = yooKassaWebhookParser;
+        this.robokassaWebhookParser = robokassaWebhookParser;
 
         // Собираем registry: каждая стратегия сама заявляет свой provider()
         this.strategyRegistry = strategies.stream()
@@ -106,15 +110,44 @@ public class PaymentService {
      * Парсит payload → обновляет статус Payment → начисляет кредиты при успехе.
      */
     public void processYooKassaWebhook(String rawPayload) {
-        YooKassaWebhookPayload payload = webhookParser.parse(rawPayload);
+        YooKassaWebhookPayload payload = yooKassaWebhookParser.parse(rawPayload);
 
-        if (webhookParser.isPaymentSucceeded(payload)) {
+        if (yooKassaWebhookParser.isPaymentSucceeded(payload)) {
             handleYooKassaSuccess(payload);
-        } else if (webhookParser.isPaymentCancelled(payload)) {
+        } else if (yooKassaWebhookParser.isPaymentCancelled(payload)) {
             handleYooKassaCancellation(payload);
         } else {
             log.debug("Пропускаем webhook event: {}", payload.getEvent());
         }
+    }
+
+    /**
+     * Обрабатывает webhook от Robokassa (ResultURL).
+     * Проверяет подпись через Пароль#2, начисляет кредиты при успехе.
+     *
+     * @param outSum         сумма платежа (строка от Робокассы)
+     * @param invId          наш internal payment ID
+     * @param signatureValue подпись для верификации
+     * @throws SecurityException если подпись невалидна
+     */
+    @Transactional
+    public void processRobokassaWebhook(String outSum, String invId, String signatureValue) {
+        if (!robokassaWebhookParser.isSignatureValid(outSum, invId, signatureValue)) {
+            throw new SecurityException("Невалидная подпись Robokassa webhook: invId=" + invId);
+        }
+
+        Long internalPaymentId = robokassaWebhookParser.extractInvId(invId);
+
+        // Идемпотентность: если уже обработали — просто логируем и выходим
+        Payment payment = paymentRepository.findById(internalPaymentId)
+                .orElseThrow(() -> new PaymentNotFoundException(internalPaymentId));
+
+        if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
+            log.warn("Robokassa webhook: платёж уже обработан: internalId={}", internalPaymentId);
+            return;
+        }
+
+        completePayment(payment);
     }
 
     /**
