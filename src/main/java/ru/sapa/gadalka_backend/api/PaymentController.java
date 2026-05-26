@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.sapa.gadalka_backend.api.dto.payment.*;
@@ -28,6 +30,13 @@ public class PaymentController extends BaseController {
     private final PaymentWebhookAckService webhookAckService;
 
     /**
+     * Активный провайдер рублёвых платежей.
+     * Управляется переменной PAYMENT_RUB_PROVIDER. По умолчанию: robokassa.
+     */
+    @Value("${payment.rub-provider:robokassa}")
+    private String rubProvider;
+
+    /**
      * GET /api/v1/payments/products
      * Каталог продуктов — без авторизации, для отображения на экране покупки.
      */
@@ -38,6 +47,17 @@ public class PaymentController extends BaseController {
                 .map(PaymentProductDto::from)
                 .toList();
         return ResponseEntity.ok(products);
+    }
+
+    /**
+     * GET /api/v1/payments/config
+     * Конфигурация платёжной системы для фронтенда — без авторизации.
+     * Позволяет переключать провайдера рублёвых платежей через PAYMENT_RUB_PROVIDER
+     * без передеплоя фронтенда.
+     */
+    @GetMapping("/config")
+    public ResponseEntity<PaymentConfigResponse> getConfig() {
+        return ResponseEntity.ok(new PaymentConfigResponse(rubProvider));
     }
 
     /**
@@ -85,14 +105,41 @@ public class PaymentController extends BaseController {
      * <p>
      * ВАЖНО: этот эндпоинт должен ответить HTTP 200 как можно быстрее.
      * Реальная обработка происходит асинхронно в PaymentWebhookAckService.
-     * <p>
-     * Webhook специфичен для ЮKassa — у Telegram Stars callback приходит
-     * через Bot update, а не HTTP. Поэтому эндпоинт остаётся отдельным.
      */
     @PostMapping("/yookassa/webhook")
     public ResponseEntity<Void> yookassaWebhook(@RequestBody String rawPayload) {
         log.debug("Получен webhook от ЮKassa, длина payload: {} байт", rawPayload.length());
         webhookAckService.acknowledge(PaymentProvider.YOOKASSA, rawPayload);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * POST /api/v1/payments/robokassa/webhook  (ResultURL)
+     * Webhook от Robokassa — вызывается после успешной оплаты.
+     * <p>
+     * Та же двухфазная схема, что и у ЮKassa:
+     * 1. Сохраняем параметры в лог-таблицу за ~1мс → отвечаем Robokassa.
+     * 2. PaymentWebhookAckService обрабатывает асинхронно по расписанию.
+     * <p>
+     * КРИТИЧНО: Robokassa ждёт plain text "OK{InvId}" (например, "OK42").
+     * InvId читается из параметров до сохранения — это мгновенно,
+     * поэтому двухфазность не мешает быстро ответить нужным текстом.
+     * <p>
+     * Параметры приходят как form-параметры (application/x-www-form-urlencoded).
+     * IP-адреса Robokassa фильтруются на уровне {@code RobokassaWebhookIpFilter}.
+     */
+    @PostMapping(value = "/robokassa/webhook", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> robokassaWebhook(
+            @RequestParam("OutSum") String outSum,
+            @RequestParam("InvId") String invId,
+            @RequestParam("SignatureValue") String signatureValue) {
+
+        log.debug("Получен webhook от Robokassa: InvId={}, OutSum={}", invId, outSum);
+
+        // Фаза 1: сохраняем параметры в лог и отвечаем немедленно
+        webhookAckService.acknowledgeRobokassa(outSum, invId, signatureValue);
+
+        // Robokassa требует именно этот формат — иначе будет слать повторно
+        return ResponseEntity.ok("OK" + invId);
     }
 }
