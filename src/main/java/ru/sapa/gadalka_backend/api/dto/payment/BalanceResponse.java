@@ -7,7 +7,7 @@ import lombok.Getter;
 @AllArgsConstructor
 public class BalanceResponse {
 
-    /** Текущее количество гаданий на балансе */
+    /** Текущее количество знаков на балансе */
     private int balance;
 
     /** true если есть активная подписка (сейчас всегда false) */

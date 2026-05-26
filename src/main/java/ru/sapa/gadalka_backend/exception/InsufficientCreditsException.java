@@ -1,12 +1,12 @@
 package ru.sapa.gadalka_backend.exception;
 
 /**
- * Выбрасывается когда у пользователя недостаточно гаданий (кредитов)
+ * Выбрасывается когда у пользователя недостаточно знаков (кредитов)
  * и нет активной подписки.
  */
 public class InsufficientCreditsException extends RuntimeException {
 
     public InsufficientCreditsException() {
-        super("Недостаточно гаданий. Пополните баланс для продолжения.");
+        super("Недостаточно знаков. Пополните баланс для продолжения.");
     }
 }

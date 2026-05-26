@@ -8,7 +8,7 @@ import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import java.time.OffsetDateTime;
 
 /**
- * Запись в истории движения кредитов (гаданий).
+ * Запись в истории движения кредитов (знаков).
  * Append-only лог — записи никогда не удаляются и не изменяются.
  * <p>
  * delta > 0 — начисление (покупка, бонус)
