@@ -7,7 +7,7 @@ CREATE TABLE card_deck_themes
     description TEXT,                           -- Описание для магазина
     base_url         VARCHAR(512),
     image_extension  VARCHAR(10)  NOT NULL DEFAULT 'jpg', -- Расширение файлов картинок для данной темы: 'jpg', 'png', 'webp' и т.д.
-    price       INT          NOT NULL DEFAULT 0, -- Стоимость в кредитах (знаках)
+    price       INT          NOT NULL DEFAULT 0, -- Стоимость в кредитах (гаданиях)
     is_free     BOOLEAN      NOT NULL DEFAULT false, -- true = классическая/бесплатная, покупка не нужна
     is_enabled  BOOLEAN      NOT NULL DEFAULT true,  -- false = "скоро", кнопки покупки нет
     sort_order  INT          NOT NULL DEFAULT 0      -- Порядок отображения в магазине
