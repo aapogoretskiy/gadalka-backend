@@ -24,11 +24,11 @@ public class PaymentProduct {
     @Column(name = "code", nullable = false, unique = true, length = 50)
     private String code;
 
-    /** Отображаемое название, например "7 гаданий" */
+    /** Отображаемое название, например "7 знаков" */
     @Column(name = "name", nullable = false)
     private String name;
 
-    /** Сколько гаданий (кредитов) начисляется при покупке */
+    /** Сколько знаков (кредитов) начисляется при покупке */
     @Column(name = "readings_count", nullable = false)
     private Integer readingsCount;
 

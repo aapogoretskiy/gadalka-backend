@@ -16,7 +16,7 @@ import ru.sapa.gadalka_backend.repository.UserFortuneCreditRepository;
 import java.time.OffsetDateTime;
 
 /**
- * Единственная точка управления балансом гаданий.
+ * Единственная точка управления балансом знаков.
  * Ниукакой другой сервис не должен напрямю трогать user_fortune_credits.
  * <p>
  * Каждое изменение баланса атомарно записывается в fortune_credit_log —
@@ -32,7 +32,7 @@ public class FortuneCreditService {
     private final SubscriptionRepository subscriptionRepository;
 
     /**
-     * Возвращает текущий баланс гаданий.
+     * Возвращает текущий баланс знаков.
      * Если записи в БД нет — возвращает 0 (новый пользователь до первого начисления).
      */
     @Transactional(readOnly = true)
@@ -60,17 +60,17 @@ public class FortuneCreditService {
     }
 
     /**
-     * Начисляет гадания пользователю (после успешного платежа, бонус и т.д.).
+     * Начисляет знаки пользователю (после успешного платежа, бонус и т.д.).
      * Операция транзакционна: баланс и лог обновляются атомарно.
      *
      * @param userId    ID пользователя
-     * @param count     количество гаданий для начисления
+     * @param count     количество знаков для начисления
      * @param reason    причина начисления
      * @param paymentId ID платежа (null если не связано с платежом)
      */
     @Transactional
     public void grantCredits(Long userId, int count, CreditTransactionReason reason, Long paymentId) {
-        if (count <= 0) throw new IllegalArgumentException("Количество начисляемых гаданий должно быть > 0");
+        if (count <= 0) throw new IllegalArgumentException("Количество начисляемых знаков должно быть > 0");
 
         UserFortuneCredit credit = creditRepository.findByUserId(userId)
                 .orElseGet(() -> UserFortuneCredit.builder()
@@ -88,12 +88,12 @@ public class FortuneCreditService {
                 .paymentId(paymentId)
                 .build());
 
-        log.info("Начислено {} гаданий: userId={}, reason={}, paymentId={}, newBalance={}",
+        log.info("Начислено {} знаков: userId={}, reason={}, paymentId={}, newBalance={}",
                 count, userId, reason, paymentId, credit.getBalance());
     }
 
     /**
-     * Списывает 1 гадание за использование функции.
+     * Списывает 1 знак за использование функции.
      * Удобный вариант для фич с фиксированной стоимостью в 1 кредит (совместимость, и т.д.).
      *
      * @param userId      ID пользователя
@@ -105,7 +105,7 @@ public class FortuneCreditService {
     }
 
     /**
-     * Списывает {@code count} гаданий за использование функции.
+     * Списывает {@code count} знаков за использование функции.
      * Использует PESSIMISTIC_WRITE lock — защита от гонки при одновременных запросах.
      * <p>
      * Если у пользователя нет активной подписки и баланс < count → кидает InsufficientCreditsException.
@@ -135,7 +135,7 @@ public class FortuneCreditService {
                 .orElseThrow(InsufficientCreditsException::new);
 
         if (credit.getBalance() < count) {
-            log.info("Недостаточно гаданий: userId={}, feature={}, нужно={}, есть={}",
+            log.info("Недостаточно знаков: userId={}, feature={}, нужно={}, есть={}",
                     userId, featureType, count, credit.getBalance());
             throw new InsufficientCreditsException();
         }
@@ -150,7 +150,7 @@ public class FortuneCreditService {
                 .featureType(featureType)
                 .build());
 
-        log.info("Списано {} гаданий: userId={}, feature={}, remainingBalance={}",
+        log.info("Списано {} знаков: userId={}, feature={}, remainingBalance={}",
                 count, userId, featureType, credit.getBalance());
     }
 
@@ -170,7 +170,7 @@ public class FortuneCreditService {
                 .orElseThrow(InsufficientCreditsException::new);
 
         if (credit.getBalance() < cost) {
-            log.info("Недостаточно гаданий для покупки темы: userId={}, нужно={}, есть={}",
+            log.info("Недостаточно знаков для покупки темы: userId={}, нужно={}, есть={}",
                     userId, cost, credit.getBalance());
             throw new InsufficientCreditsException();
         }
@@ -184,7 +184,7 @@ public class FortuneCreditService {
                 .reason(CreditTransactionReason.THEME_PURCHASE)
                 .build());
 
-        log.info("Списано {} гаданий за покупку темы: userId={}, remainingBalance={}",
+        log.info("Списано {} знаков за покупку темы: userId={}, remainingBalance={}",
                 cost, userId, credit.getBalance());
     }
 }

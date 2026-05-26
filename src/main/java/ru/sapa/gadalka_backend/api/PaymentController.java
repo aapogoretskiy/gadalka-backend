@@ -62,7 +62,7 @@ public class PaymentController extends BaseController {
 
     /**
      * GET /api/v1/payments/balance
-     * Текущий баланс гаданий авторизованного пользователя.
+     * Текущий баланс знаков авторизованного пользователя.
      */
     @GetMapping("/balance")
     public ResponseEntity<BalanceResponse> getBalance(HttpServletRequest request) {
