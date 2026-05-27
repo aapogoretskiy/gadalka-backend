@@ -13,6 +13,7 @@ import ru.sapa.gadalka_backend.api.dto.ErrorResponse;
 import ru.sapa.gadalka_backend.exception.FreeFortuneAlreadyUsedException;
 import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
+import ru.sapa.gadalka_backend.exception.RateLimitExceededException;
 import ru.sapa.gadalka_backend.exception.ProductNotFoundException;
 import ru.sapa.gadalka_backend.exception.ThemeAlreadyOwnedException;
 import ru.sapa.gadalka_backend.exception.ThemeNotFoundException;
@@ -24,6 +25,16 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException ex,
+                                                         HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(new ErrorResponse(HttpStatus.TOO_MANY_REQUESTS.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
 
     @ExceptionHandler(FreeFortuneAlreadyUsedException.class)
     public ResponseEntity<ErrorResponse> handleFreeFortuneAlreadyUsed(FreeFortuneAlreadyUsedException ex,

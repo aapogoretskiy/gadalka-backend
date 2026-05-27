@@ -81,13 +81,13 @@ openrouter:
   url: https://openrouter.ai/api/v1/chat/completions
   model: openai/gpt-4o-mini
 
-# Swagger/OpenAPI: в продакшне отключить (SWAGGER_ENABLED=false или не задавать)
-# В dev: запустить с SWAGGER_ENABLED=true или использовать дефолт true для локальной разработки
+# Swagger/OpenAPI: по умолчанию ВЫКЛЮЧЕН
+# В dev: добавить в .env или Run Configuration: SWAGGER_ENABLED=true
 springdoc:
   swagger-ui:
-    enabled: ${SWAGGER_ENABLED:true}
+    enabled: ${SWAGGER_ENABLED:false}
   api-docs:
-    enabled: ${SWAGGER_ENABLED:true}
+    enabled: ${SWAGGER_ENABLED:false}
 
 # Spring Actuator: открываем только /health, остальное скрываем
 management:

@@ -14,9 +14,12 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneRequest;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
+import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.service.AiRateLimitService;
 import ru.sapa.gadalka_backend.service.CompatibilityService;
 import ru.sapa.gadalka_backend.service.FortuneService;
 import ru.sapa.gadalka_backend.service.ProfanityFilterService;
+import ru.sapa.gadalka_backend.service.PromptInjectionFilterService;
 
 @RestController
 @RequestMapping("/api/fortune")
@@ -27,14 +30,19 @@ public class FortuneController extends BaseController {
     private final FortuneService fortuneService;
     private final CompatibilityService compatibilityService;
     private final ProfanityFilterService profanityFilterService;
+    private final PromptInjectionFilterService promptInjectionFilterService;
+    private final AiRateLimitService aiRateLimitService;
 
     @PostMapping
     @Operation(summary = "Гадание \"3 карты\"",
                description = "Возвращает одно и то же предсказание для одного пользователя и одного вопроса")
     public FortuneResponse getFortune(@Valid @RequestBody FortuneRequest fortuneRequest,
                                       HttpServletRequest request) {
+        User user = resolveUser(request);
         profanityFilterService.validate(fortuneRequest.getQuestion());
-        return fortuneService.getFortune(resolveUser(request), fortuneRequest.getQuestion(),
+        promptInjectionFilterService.validate(fortuneRequest.getQuestion(), user.getId());
+        aiRateLimitService.checkLimit(user.getId());
+        return fortuneService.getFortune(user, fortuneRequest.getQuestion(),
                 fortuneRequest.getCategory(), fortuneRequest.getSpreadType());
     }
 
