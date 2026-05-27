@@ -75,7 +75,7 @@ public class CompatibilityService {
     }
 
     /**
-     * Разблокировка полного анализа за 1 гадание.
+     * Разблокировка полного анализа за 1 знак.
      * Повторный вызов для уже разблокированного расклада — бесплатен.
      */
     public CompatibilityResponse unlockCompatibility(Long readingId, User user) {

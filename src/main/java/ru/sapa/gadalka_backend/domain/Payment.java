@@ -55,7 +55,7 @@ public class Payment {
     private String currency;
 
     /**
-     * Сколько гаданий начислить при успехе.
+     * Сколько знаков начислить при успехе.
      * Фиксируется в момент создания платежа, независимо от будущих изменений каталога.
      */
     @Column(name = "credits_to_grant", nullable = false)

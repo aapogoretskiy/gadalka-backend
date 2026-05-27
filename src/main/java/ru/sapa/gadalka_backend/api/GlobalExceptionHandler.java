@@ -39,7 +39,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(FreeFortuneAlreadyUsedException.class)
     public ResponseEntity<ErrorResponse> handleFreeFortuneAlreadyUsed(FreeFortuneAlreadyUsedException ex,
                                                                        HttpServletRequest request) {
-        log.warn("Попытка повторного бесплатного гадания: userId из запроса={}", request.getRequestURI());
+        log.warn("Попытка повторного использования бесплатного знака: userId из запроса={}", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
                 .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
                         ex.getMessage(),
@@ -50,7 +50,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InsufficientCreditsException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientCredits(InsufficientCreditsException ex,
                                                                     HttpServletRequest request) {
-        log.info("Недостаточно гаданий: uri={}", request.getRequestURI());
+        log.info("Недостаточно знаков: uri={}", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
                 .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
                         ex.getMessage(),

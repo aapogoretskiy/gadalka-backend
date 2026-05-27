@@ -47,7 +47,7 @@ public class TelegramStarsService {
 
         CreateInvoiceLink invoiceLink = CreateInvoiceLink.builder()
                 .title(product.getName())
-                .description("Пополнение баланса гаданий в MagicLiora")
+                .description("Пополнение баланса знаков в MagicLiora")
                 // Payload — наш internal payment id. Вернётся в SuccessfulPayment.
                 // Telegram не показывает его пользователю.
                 .payload(String.valueOf(internalPaymentId))

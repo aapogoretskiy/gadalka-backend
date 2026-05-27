@@ -49,7 +49,7 @@ public class FortuneController extends BaseController {
     @PostMapping("/compatibility/{id}/unlock")
     @Operation(
             summary = "Разблокировать полный анализ совместимости",
-            description = "Списывает 1 гадание и возвращает полный анализ (интерпретацию и категории). " +
+            description = "Списывает 1 знак и возвращает полный анализ (интерпретацию и категории). " +
                           "Повторный вызов для уже разблокированного расклада — бесплатен.")
     public CompatibilityResponse unlockCompatibility(@PathVariable Long id,
                                                      HttpServletRequest request) {
