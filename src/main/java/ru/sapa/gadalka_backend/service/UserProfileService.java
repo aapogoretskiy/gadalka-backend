@@ -67,11 +67,18 @@ public class UserProfileService {
         }
         UserProfile userProfile = userProfileOpt.get();
 
-        userProfile.setBirthDate(request.birthDate());
-        userProfile.setBirthTime(request.birthTime());
-        userProfile.setBirthCity(request.birthCity());
-        userProfile.setGoals(request.goals());
-
+        if (request.birthDate() != null) {
+            userProfile.setBirthDate(request.birthDate());
+        }
+        if (request.birthTime() != null) {
+            userProfile.setBirthTime(request.birthTime());
+        }
+        if (request.birthCity() != null) {
+            userProfile.setBirthCity(request.birthCity());
+        }
+        if (request.goals() != null) {
+            userProfile.setGoals(request.goals());
+        }
         if (request.notificationTime() != null) {
             userProfile.setNotificationTime(request.notificationTime());
         }
