@@ -15,6 +15,7 @@ import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.PaymentWebhookAckService;
 import ru.sapa.gadalka_backend.service.ProductCatalogService;
+import ru.sapa.gadalka_backend.service.robokassa.RobokassaPageService;
 
 import java.util.List;
 
@@ -28,6 +29,7 @@ public class PaymentController extends BaseController {
     private final FortuneCreditService fortuneCreditService;
     private final PaymentService paymentService;
     private final PaymentWebhookAckService webhookAckService;
+    private final RobokassaPageService robokassaPageService;
 
     /**
      * Активный провайдер рублёвых платежей.
@@ -111,6 +113,23 @@ public class PaymentController extends BaseController {
         log.debug("Получен webhook от ЮKassa, длина payload: {} байт", rawPayload.length());
         webhookAckService.acknowledge(PaymentProvider.YOOKASSA, rawPayload);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * GET /api/v1/payments/robokassa/pay/{paymentId}
+     * Промежуточная страница для оплаты через Robokassa — без авторизации.
+     * <p>
+     * Возвращает HTML с автосабмит POST-формой, которая отправляет номенклатуру
+     * (Receipt) на Robokassa. Нужна потому что Receipt требует POST,
+     * а браузер умеет делать только GET при переходе по ссылке.
+     * <p>
+     * Пользователь открывает эту страницу → JavaScript сабмитит форму → Robokassa.
+     */
+    @GetMapping(value = "/robokassa/pay/{paymentId}", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> robokassaPaymentPage(@PathVariable Long paymentId) {
+        log.debug("Запрос страницы оплаты Robokassa: paymentId={}", paymentId);
+        String html = robokassaPageService.buildPaymentPage(paymentId);
+        return ResponseEntity.ok(html);
     }
 
     /**

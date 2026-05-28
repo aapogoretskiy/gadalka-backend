@@ -1,7 +1,7 @@
 package ru.sapa.gadalka_backend.service.robokassa;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.PaymentProduct;
@@ -11,25 +11,26 @@ import ru.sapa.gadalka_backend.service.PaymentProviderStrategy;
 /**
  * Стратегия инициирования платежа через Robokassa.
  * <p>
- * Принципиальное отличие от ЮKassa: здесь нет HTTP-вызова к внешнему API.
- * Вместо этого формируется подписанный URL, по которому пользователь переходит
- * напрямую на страницу оплаты Robokassa.
- * <p>
  * Поток:
- * 1. {@code initiatePayment} → строит URL с подписью (Пароль #1)
- * 2. Фронт открывает URL через {@code Telegram.WebApp.openLink()}
- * 3. Пользователь оплачивает → Robokassa вызывает ResultURL (webhook)
- * 4. Webhook обрабатывается в {@code PaymentController#robokassaWebhook}
+ * 1. {@code initiatePayment} → возвращает URL нашей промежуточной страницы
+ * 2. Фронт открывает его через {@code Telegram.WebApp.openLink()}
+ * 3. Браузер загружает страницу → JavaScript сабмитит POST-форму на Robokassa
+ * 4. Пользователь оплачивает → Robokassa вызывает ResultURL (webhook)
+ * 5. Webhook обрабатывается в {@code PaymentController#robokassaWebhook}
  * <p>
- * {@code providerPaymentId} у Robokassa нет на этапе создания — он не нужен,
+ * Промежуточная страница нужна потому что Receipt (номенклатура для фискализации)
+ * требует POST — браузер не может сделать POST при переходе по ссылке.
+ * <p>
+ * {@code providerPaymentId} у Robokassa нет на этапе создания — не нужен,
  * потому что связь с нашим Payment происходит через InvId = payment.getId().
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class RobokassaPaymentStrategy implements PaymentProviderStrategy {
 
-    private final RobokassaClient robokassaClient;
+    /** Базовый URL приложения — используется для построения URL промежуточной страницы. */
+    @Value("${telegram.bot.app-url}")
+    private String appUrl;
 
     @Override
     public PaymentProvider provider() {
@@ -38,7 +39,7 @@ public class RobokassaPaymentStrategy implements PaymentProviderStrategy {
 
     @Override
     public int getAmountMinor(PaymentProduct product) {
-        return product.getPriceRub(); // копейки, как у ЮKassa
+        return product.getPriceRub(); // копейки
     }
 
     @Override
@@ -47,23 +48,18 @@ public class RobokassaPaymentStrategy implements PaymentProviderStrategy {
     }
 
     /**
-     * Формирует подписанный URL страницы оплаты Robokassa.
-     * <p>
-     * В отличие от ЮKassa, {@code providerPaymentId} НЕ устанавливается —
-     * Robokassa возвращает наш InvId (= payment.getId()) в webhook,
-     * что достаточно для идентификации платежа.
+     * Возвращает URL нашей промежуточной страницы, которая делает POST на Robokassa.
+     * Фронт открывает этот URL через WebApp.openLink() — пользователь попадает на оплату.
      */
     @Override
     public String initiatePayment(Payment payment, PaymentProduct product) {
-        String url = robokassaClient.buildPaymentUrl(
-                payment.getId(),
-                product.getPriceRub(),
-                "Покупка: " + product.getName()
-        );
+        // Убираем trailing slash у appUrl, чтобы не получить двойной слэш
+        String base = appUrl.endsWith("/") ? appUrl.substring(0, appUrl.length() - 1) : appUrl;
+        String pageUrl = base + "/api/v1/payments/robokassa/pay/" + payment.getId();
 
-        log.info("Robokassa URL сформирован: internalId={}, product={}",
-                payment.getId(), product.getCode());
+        log.info("Robokassa: промежуточная страница сформирована: internalId={}, product={}, url={}",
+                payment.getId(), product.getCode(), pageUrl);
 
-        return url;
+        return pageUrl;
     }
 }

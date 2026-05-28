@@ -3,23 +3,24 @@ package ru.sapa.gadalka_backend.service.robokassa;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * Клиент Robokassa — формирует подписанную ссылку на страницу оплаты.
+ * Клиент Robokassa — формирует HTML-страницу с автосабмит POST-формой для оплаты.
  * <p>
- * В отличие от ЮKassa, у Робокассы нет server-to-server REST API для создания платежа.
- * Вместо этого мы строим URL с параметрами и подписью, пользователь переходит по нему
- * напрямую — Робокасса показывает страницу оплаты.
+ * Robokassa требует передачи номенклатуры (Receipt) для фискализации по 54-ФЗ.
+ * Receipt обязательно участвует в подписи и должен передаваться через POST.
  * <p>
- * Подпись для создания: MD5(MerchantLogin:OutSum:InvId:Пароль#1)
+ * Подпись для создания: MD5(MerchantLogin:OutSum:InvId:Receipt:Пароль#1)
+ * где Receipt — URL-encoded JSON (тот же формат что браузер передаёт при сабмите формы).
+ * <p>
  * Подпись для верификации webhook: MD5(OutSum:InvId:Пароль#2) — см. {@link RobokassaWebhookParser}
  */
 @Slf4j
@@ -46,62 +47,77 @@ public class RobokassaClient {
     }
 
     /**
-     * Формирует URL страницы оплаты Robokassa.
+     * Строит HTML-страницу с автосабмит POST-формой для перенаправления на Robokassa.
+     * <p>
+     * Пользователь открывает нашу промежуточную страницу — JavaScript мгновенно
+     * сабмитит форму → браузер делает POST на Robokassa → пользователь видит страницу оплаты.
      *
-     * @param internalPaymentId наш внутренний ID платежа (используется как InvId)
-     * @param amountKopecks     сумма в копейках (9900 = 99₽)
-     * @param description       описание платежа (отображается пользователю)
-     * @return URL для редиректа пользователя
+     * @param paymentId     наш внутренний ID платежа (InvId)
+     * @param amountKopecks сумма в копейках (19900 = 199₽)
+     * @param productName   название продукта для Receipt и Description
+     * @return HTML-страница с автосабмит формой
      */
-    public String buildPaymentUrl(Long internalPaymentId, int amountKopecks, String description) {
-        // Робокасса принимает рубли с 2 знаками после запятой: 9900 коп → "99.00"
-        String outSum = kopecksToRubles(amountKopecks);
-        String invId = String.valueOf(internalPaymentId);
+    public String buildPaymentFormHtml(Long paymentId, int amountKopecks, String productName) {
+        String outSum      = kopecksToRubles(amountKopecks);
+        String invId       = String.valueOf(paymentId);
+        String description = "Покупка: " + productName;
 
-        String signature = buildSignature(merchantLogin, outSum, invId, password1);
+        // Строим Receipt JSON для фискализации (СМЗ: без НДС, тип — услуга)
+        String receiptJson = buildReceiptJson(productName, outSum);
 
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(PAYMENT_URL)
-                .queryParam("MerchantLogin", merchantLogin)
-                .queryParam("OutSum", outSum)
-                .queryParam("InvId", invId)
-                .queryParam("Description", description)
-                .queryParam("SignatureValue", signature);
+        // URL-кодируем Receipt — именно этот encoded вариант участвует в подписи.
+        // Браузер при сабмите формы тоже URL-кодирует значения полей (form url-encoding),
+        // поэтому Robokassa получит тот же encoded Receipt что мы использовали в подписи.
+        String urlEncodedReceipt = urlEncode(receiptJson);
 
-        // IsTest передаём ТОЛЬКО в тестовом режиме — в боевом параметр не нужен
-        if (testMode) {
-            builder.queryParam("IsTest", 1);
-        }
+        // Подпись с Receipt: MD5(MerchantLogin:OutSum:InvId:Receipt:Пароль#1)
+        String signature = buildSignature(merchantLogin, outSum, invId, urlEncodedReceipt, password1);
 
-        String url = builder.build().toUriString();
+        log.info("Robokassa форма сформирована: internalId={}, outSum={}, testMode={}",
+                paymentId, outSum, testMode);
 
-        log.info("Robokassa URL сформирован: internalId={}, outSum={}, testMode={}",
-                internalPaymentId, outSum, testMode);
-
-        return url;
+        return buildHtml(outSum, invId, description, urlEncodedReceipt, signature);
     }
 
     /**
-     * Вычисляет MD5-подпись для запроса на оплату.
-     * Формула: MD5(MerchantLogin:OutSum:InvId:Пароль#1)
+     * Строит JSON-номенклатуру для чека (Receipt).
+     * Для СМЗ: без НДС (tax=none), тип позиции — услуга (service), полная оплата.
+     *
+     * @param productName название услуги (попадёт в чек)
+     * @param sum         сумма в рублях (строка вида "199.00")
      */
-    static String buildSignature(String merchantLogin, String outSum,
-                                 String invId, String password) {
-        String raw = String.join(":", merchantLogin, outSum, invId, password);
+    public String buildReceiptJson(String productName, String sum) {
+        String safeName = productName.replace("\\", "\\\\").replace("\"", "\\\"");
+        return String.format(
+                "{\"items\":[{\"name\":\"%s\",\"quantity\":1,\"sum\":%s," +
+                "\"payment_method\":\"full_payment\",\"payment_object\":\"service\",\"tax\":\"none\"}]}",
+                safeName, sum
+        );
+    }
+
+    /**
+     * Вычисляет MD5-подпись с Receipt.
+     * Формула: MD5(MerchantLogin:OutSum:InvId:Receipt:Пароль#1)
+     * Receipt передаётся URL-encoded — тот же формат что браузер шлёт в POST-теле формы.
+     */
+    static String buildSignature(String merchantLogin, String outSum, String invId,
+                                 String urlEncodedReceipt, String password) {
+        String raw = String.join(":", merchantLogin, outSum, invId, urlEncodedReceipt, password);
         return md5(raw);
     }
 
     /**
      * Конвертирует копейки в строку рублей с двумя знаками после запятой.
-     * Пример: 9900 → "99.00", 14900 → "149.00"
+     * Пример: 19900 → "199.00"
      */
-    static String kopecksToRubles(int kopecks) {
+    public static String kopecksToRubles(int kopecks) {
         return BigDecimal.valueOf(kopecks)
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
                 .toPlainString();
     }
 
     /**
-     * Вычисляет MD5-хэш строки в нижнем регистре (как требует Робокасса).
+     * Вычисляет MD5-хэш строки в верхнем регистре (как требует Robokassa).
      */
     static String md5(String input) {
         try {
@@ -111,5 +127,51 @@ public class RobokassaClient {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("MD5 недоступен", e);
         }
+    }
+
+    // ── Приватные вспомогательные методы ────────────────────────────────────────
+
+    private static String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String escapeHtml(String text) {
+        return text
+                .replace("&", "&amp;")
+                .replace("\"", "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    private String buildHtml(String outSum, String invId, String description,
+                              String urlEncodedReceipt, String signature) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html><html><head>")
+          .append("<meta charset=\"UTF-8\">")
+          .append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
+          .append("<title>Переход к оплате...</title>")
+          .append("</head><body>")
+          .append("<form id=\"f\" method=\"POST\" action=\"").append(PAYMENT_URL).append("\">")
+          .append(hiddenField("MerchantLogin", merchantLogin))
+          .append(hiddenField("OutSum",         outSum))
+          .append(hiddenField("InvId",          invId))
+          .append(hiddenField("Description",    description))
+          .append(hiddenField("Receipt",        urlEncodedReceipt))
+          .append(hiddenField("SignatureValue",  signature));
+
+        if (testMode) {
+            sb.append(hiddenField("IsTest", "1"));
+        }
+
+        sb.append("</form>")
+          .append("<script>document.getElementById('f').submit();</script>")
+          .append("</body></html>");
+
+        return sb.toString();
+    }
+
+    private static String hiddenField(String name, String value) {
+        return String.format("<input type=\"hidden\" name=\"%s\" value=\"%s\"/>",
+                escapeHtml(name), escapeHtml(value));
     }
 }
