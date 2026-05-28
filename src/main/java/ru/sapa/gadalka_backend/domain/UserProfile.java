@@ -3,6 +3,7 @@ package ru.sapa.gadalka_backend.domain;
 import jakarta.persistence.*;
 import lombok.*;
 import ru.sapa.gadalka_backend.api.dto.profile.Goal;
+import ru.sapa.gadalka_backend.domain.type.NotificationTime;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -40,4 +41,9 @@ public class UserProfile {
     @Enumerated(EnumType.STRING)
     @Column(name = "goal")
     private Set<Goal> goals = new HashSet<>();
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notification_time", nullable = false)
+    @Builder.Default
+    private NotificationTime notificationTime = NotificationTime.EVENING;
 }

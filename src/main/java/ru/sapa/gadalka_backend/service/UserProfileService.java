@@ -8,6 +8,7 @@ import ru.sapa.gadalka_backend.api.dto.profile.ProfileResponse;
 import ru.sapa.gadalka_backend.api.dto.profile.UpdateProfileRequest;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.UserProfile;
+import ru.sapa.gadalka_backend.domain.type.NotificationTime;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
@@ -34,12 +35,18 @@ public class UserProfileService {
             throw new RuntimeException(String.format("Cannot find user by id: %s", userId));
         }
         User user = userOpt.get();
+
+        NotificationTime notificationTime = createRequest.notificationTime() != null
+                ? createRequest.notificationTime()
+                : NotificationTime.EVENING;
+
         UserProfile userProfile = UserProfile.builder()
                 .user(user)
                 .birthDate(createRequest.birthDate())
                 .birthTime(createRequest.birthTime())
                 .birthCity(createRequest.birthCity())
                 .goals(createRequest.goals())
+                .notificationTime(notificationTime)
                 .build();
 
         userProfileRepository.save(userProfile);
@@ -65,6 +72,10 @@ public class UserProfileService {
         userProfile.setBirthCity(request.birthCity());
         userProfile.setGoals(request.goals());
 
+        if (request.notificationTime() != null) {
+            userProfile.setNotificationTime(request.notificationTime());
+        }
+
         userProfileRepository.save(userProfile);
         return map(userProfile);
     }
@@ -84,7 +95,8 @@ public class UserProfileService {
                 profile.getBirthDate(),
                 profile.getBirthTime(),
                 profile.getBirthCity(),
-                profile.getGoals()
+                profile.getGoals(),
+                profile.getNotificationTime()
         );
     }
 }

@@ -8,8 +8,10 @@ import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsume
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerPreCheckoutQuery;
+import org.telegram.telegrambots.meta.api.methods.menubutton.SetChatMenuButton;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.menubutton.MenuButtonWebApp;
 import org.telegram.telegrambots.meta.api.objects.payments.PreCheckoutQuery;
 import org.telegram.telegrambots.meta.api.objects.payments.SuccessfulPayment;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -72,6 +74,7 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
                 if (referralCode != null) {
                     referralService.recordBotEntry(chatId, referralCode);
                 }
+                setChatMenuButton(chatId);
                 sendWelcomeMessage(chatId, referralCode);
             }
             return;
@@ -87,6 +90,25 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
         // SuccessfulPayment — платёж Stars прошёл успешно
         if (update.hasMessage() && update.getMessage().hasSuccessfulPayment()) {
             handleSuccessfulPayment(update.getMessage().getSuccessfulPayment());
+        }
+    }
+
+    private void setChatMenuButton(long chatId) {
+        try {
+            MenuButtonWebApp menuButton = MenuButtonWebApp.builder()
+                    .text("🔮 Открыть")
+                    .webAppInfo(new WebAppInfo(appUrl))
+                    .build();
+
+            telegramClient.execute(SetChatMenuButton.builder()
+                    .chatId(chatId)
+                    .menuButton(menuButton)
+                    .build());
+
+            log.info("Menu button установлен для chatId={}", chatId);
+        } catch (TelegramApiException e) {
+            // Не критично — приложение продолжит работу, просто кнопки не будет
+            log.warn("Не удалось установить menu button для chatId={}: {}", chatId, e.getMessage());
         }
     }
 

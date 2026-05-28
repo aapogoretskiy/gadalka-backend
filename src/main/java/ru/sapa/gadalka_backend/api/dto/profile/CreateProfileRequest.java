@@ -2,6 +2,7 @@ package ru.sapa.gadalka_backend.api.dto.profile;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
+import ru.sapa.gadalka_backend.domain.type.NotificationTime;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -15,6 +16,7 @@ public record CreateProfileRequest(
         LocalTime birthTime,
         String birthCity,
         Set<Goal> goals,
-        String termsVersion
+        String termsVersion,
+        NotificationTime notificationTime
 ) {
 }
