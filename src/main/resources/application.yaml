@@ -109,7 +109,3 @@ logging:
   level:
     root: INFO
     ru.sapa.gadalka_backend: DEBUG
-
-# Пример: ADMIN_TELEGRAM_IDS=123456789,987654321,111111111
-admin:
-  telegram-ids: ${ADMIN_TELEGRAM_IDS:}
