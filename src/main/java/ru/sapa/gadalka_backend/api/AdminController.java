@@ -16,6 +16,7 @@ import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
+import ru.sapa.gadalka_backend.service.ReportService;
 
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class AdminController {
     private final FortuneCreditLogRepository creditLogRepository;
     private final GadalkaTelegramBot telegramBot;
     private final BroadcastService broadcastService;
+    private final ReportService reportService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -217,6 +219,19 @@ public class AdminController {
 
     /** DTO для запроса рассылки */
     record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds) {}
+
+    /**
+     * GET /api/admin/reports
+     *
+     * <p>Возвращает агрегированную статистику для страницы отчётов:
+     * пользователи (DAU/WAU/новые), гадания, платежи (RUB + Stars раздельно), знаки.
+     */
+    @GetMapping("/reports")
+    public ResponseEntity<?> getReports(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил отчёты", adminId);
+        return ResponseEntity.ok(reportService.buildReport());
+    }
 
     /** Краткое представление пользователя для таблицы со списком */
     private Map<String, Object> toSummary(User user) {

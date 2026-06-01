@@ -43,4 +43,18 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         GROUP BY day ORDER BY day
         """, nativeQuery = true)
     List<Object[]> revenueByDay(OffsetDateTime from);
+
+    // ── Stars (Telegram) ──────────────────────────────────────────────────
+
+    /** Суммарно Stars потрачено за всё время */
+    @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR'")
+    Long sumSucceededStars();
+
+    /** Stars за период */
+    @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from")
+    Long sumSucceededStarsSince(OffsetDateTime from);
+
+    /** Количество уникальных Stars-плательщиков */
+    @Query("SELECT COUNT(DISTINCT p.userId) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR'")
+    Long countStarsPayingUsers();
 }
