@@ -10,5 +10,7 @@ public enum CreditTransactionReason {
     /** Возврат кредитов при рефанде */
     REFUND,
     /** Покупка темы (колоды) карт */
-    THEME_PURCHASE
+    THEME_PURCHASE,
+    /** Подарок от администратора через админ-панель */
+    ADMIN_GIFT
 }

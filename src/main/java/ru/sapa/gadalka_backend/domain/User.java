@@ -63,6 +63,22 @@ public class User {
     @Column(name = "terms_version", length = 50)
     private String termsVersion;
 
+    /**
+     * Флаг бана пользователя.
+     * При true — JwtAuthFilter возвращает 403 на все защищённые запросы.
+     * Управляется исключительно через AdminController.
+     */
+    @Column(name = "is_banned", nullable = false)
+    private boolean banned;
+
+    /**
+     * Время последней активности пользователя в приложении.
+     * Обновляется JwtAuthFilter не чаще раза в 5 минут при успешной JWT-аутентификации.
+     * Используется в админ-панели для мониторинга активности.
+     */
+    @Column(name = "last_active_at")
+    private OffsetDateTime lastActiveAt;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

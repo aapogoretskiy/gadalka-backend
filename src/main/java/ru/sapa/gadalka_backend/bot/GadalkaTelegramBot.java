@@ -151,6 +151,53 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
+     * Отправляет пользователю уведомление о подарке от администратора.
+     * Вызывается из AdminController при начислении кредитов через админ-панель.
+     *
+     * @param telegramId Telegram ID получателя
+     * @param amount     количество подаренных знаков
+     */
+    public void sendGiftNotification(Long telegramId, int amount) {
+        String text = "🎁 *Вам подарок от команды Гадалки!*\n\n" +
+                "На ваш счёт зачислено *" + amount + " " + pluralZnaki(amount) + "*.\n\n" +
+                "Откройте приложение и используйте их для новых гаданий ✨";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Открыть Гадалку")
+                .webApp(new WebAppInfo(appUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление о подарке отправлено: telegramId={}, amount={}", telegramId, amount);
+        } catch (TelegramApiException e) {
+            // Не критично для операции начисления — кредиты уже зачислены.
+            // Пользователь может не принять сообщения от бота (заблокировал бота).
+            log.warn("Не удалось отправить уведомление о подарке: telegramId={}, error={}", telegramId, e.getMessage());
+        }
+    }
+
+    /** Склонение слова "знак" по количеству */
+    private String pluralZnaki(int amount) {
+        int mod10 = amount % 10;
+        int mod100 = amount % 100;
+        if (mod10 == 1 && mod100 != 11) return "знак";
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "знака";
+        return "знаков";
+    }
+
+    /**
      * Извлекает реферальный код из команды вида "/start telegram_channel1".
      * Возвращает null, если код отсутствует или пустой.
      * Метод публичный для удобства тестирования.

@@ -8,11 +8,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.JwtService;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Slf4j
 @Component
@@ -33,12 +35,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/api/v1/payments/config",
             "/api/v1/payments/robokassa/pay/",
             "/api/v1/payments/yookassa/webhook",
-            "/api/v1/payments/robokassa/webhook"
+            "/api/v1/payments/robokassa/webhook",
+            "/api/admin/auth"
     };
+
+    private static final long LAST_ACTIVE_UPDATE_INTERVAL_MINUTES = 5;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+
+        if (request.getRequestURI().startsWith("/api/admin/")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String authorizationHeader = request.getHeader("Authorization");
 
         if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
@@ -49,6 +60,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         user -> {
                             request.setAttribute("user", user);
                             log.debug("JWT аутентификация успешна: userId={}", user.getId());
+                            updateLastActiveAt(user);
                         },
                         () -> log.warn("JWT валиден, но пользователь с id={} не найден в БД", userId)
                 );
@@ -69,7 +81,32 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        User user = (User) request.getAttribute("user");
+        if (user != null && user.isBanned()) {
+            log.warn("Заблокированный пользователь пытается получить доступ: userId={}", user.getId());
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write(
+                    "{\"status\":403,\"message\":\"Аккаунт заблокирован\",\"path\":\"%s\",\"timestamp\":\"%s\"}"
+                            .formatted(request.getRequestURI(), LocalDateTime.now())
+            );
+            return;
+        }
+
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Обновляет время последней активности пользователя.
+     * Не чаще раза в 5 минут — чтобы не делать лишний UPDATE на каждый запрос.
+     */
+    private void updateLastActiveAt(User user) {
+        OffsetDateTime now = OffsetDateTime.now();
+        if (user.getLastActiveAt() == null ||
+                user.getLastActiveAt().isBefore(now.minusMinutes(LAST_ACTIVE_UPDATE_INTERVAL_MINUTES))) {
+            user.setLastActiveAt(now);
+            userRepository.save(user);
+        }
     }
 
     private boolean requiresAuth(String uri) {
