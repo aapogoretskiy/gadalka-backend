@@ -2,11 +2,14 @@ package ru.sapa.gadalka_backend.configuration;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Конфигурация белого листа администраторов.
@@ -27,10 +30,12 @@ public class AdminProperties {
      * Список Telegram ID пользователей, имеющих доступ к админ-панели.
      * Максимум 3 человека по договорённости.
      */
-    private List<Long> telegramIds = List.of();
+    private String telegramIds = StringUtils.EMPTY;
 
     /** Проверяет, является ли указанный telegramId администратором */
     public boolean isAdmin(Long telegramId) {
-        return telegramIds.contains(telegramId);
+        return Arrays.stream(telegramIds.split(",")).map(Long::parseLong)
+                .toList()
+                .contains(telegramId);
     }
 }
