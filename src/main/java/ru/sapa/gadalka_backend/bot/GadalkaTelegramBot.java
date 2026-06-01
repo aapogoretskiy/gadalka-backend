@@ -188,6 +188,48 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
         }
     }
 
+    /**
+     * Отправляет произвольное сообщение пользователю в рамках массовой рассылки.
+     * Если {@code giftAmount} передан — добавляет в конец сообщения информацию о начисленных знаках.
+     * Кнопку "Открыть" всегда прикрепляем, чтобы конверсия в возврат была выше.
+     *
+     * <p>Метод бросает исключение при ошибке — вызывающий {@link ru.sapa.gadalka_backend.service.BroadcastService}
+     * перехватит его и посчитает как failed-отправку.
+     *
+     * @param telegramId Telegram ID получателя
+     * @param text       текст сообщения (поддерживает Markdown)
+     * @param giftAmount количество начисленных знаков (null — не упоминать)
+     */
+    public void sendBroadcastMessage(Long telegramId, String text, Integer giftAmount) {
+        String fullText = text;
+        if (giftAmount != null && giftAmount > 0) {
+            fullText += "\n\n🎁 На ваш счёт зачислено *" + giftAmount + " " + pluralZnaki(giftAmount) + "*";
+        }
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Открыть Гадалку")
+                .webApp(new WebAppInfo(appUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(fullText)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+        } catch (TelegramApiException e) {
+            // Бросаем дальше — BroadcastService обработает и посчитает как ошибку
+            throw new RuntimeException("Telegram API error for telegramId=" + telegramId + ": " + e.getMessage(), e);
+        }
+    }
+
     /** Склонение слова "знак" по количеству */
     private String pluralZnaki(int amount) {
         int mod10 = amount % 10;

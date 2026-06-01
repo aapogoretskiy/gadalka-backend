@@ -14,6 +14,7 @@ import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
+import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 
 import java.util.List;
@@ -35,6 +36,7 @@ public class AdminController {
     private final FortuneCreditService fortuneCreditService;
     private final FortuneCreditLogRepository creditLogRepository;
     private final GadalkaTelegramBot telegramBot;
+    private final BroadcastService broadcastService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -187,6 +189,34 @@ public class AdminController {
                 adminId, id, user.getTelegramId());
         return ResponseEntity.ok(Map.of("message", "Пользователь разблокирован"));
     }
+
+    /**
+     * POST /api/admin/broadcast
+     * Body: { "message": "...", "giftAmount": 5, "userIds": [1, 2, 3] }
+     *
+     * <p>Запускает массовую рассылку в фоновом потоке и сразу возвращает 200.
+     * Если {@code userIds} пусто или null — рассылка по всем зарегистрированным пользователям.
+     * Если {@code giftAmount} > 0 — каждому получателю начисляются знаки.
+     */
+    @PostMapping("/broadcast")
+    public ResponseEntity<?> broadcast(@RequestBody BroadcastRequest body, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+
+        if (body.message() == null || body.message().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "message не может быть пустым"));
+        }
+
+        boolean toAll = body.userIds() == null || body.userIds().isEmpty();
+        log.info("Admin {} запустил рассылку: toAll={}, giftAmount={}, recipients={}", adminId, toAll, body.giftAmount(), toAll ? "all" : body.userIds().size());
+
+        broadcastService.broadcast(body.message(), body.giftAmount(), body.userIds());
+
+        String info = toAll ? "всем пользователям" : "выбранным (" + body.userIds().size() + ")";
+        return ResponseEntity.ok(Map.of("message", "Рассылка запущена " + info));
+    }
+
+    /** DTO для запроса рассылки */
+    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds) {}
 
     /** Краткое представление пользователя для таблицы со списком */
     private Map<String, Object> toSummary(User user) {
