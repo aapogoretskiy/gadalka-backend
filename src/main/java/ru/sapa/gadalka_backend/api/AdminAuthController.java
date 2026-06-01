@@ -41,7 +41,7 @@ public class AdminAuthController {
     private final JwtService jwtService;
     private final AdminProperties adminProperties;
 
-    @Value("${telegram.bot.tok en}")
+    @Value("${telegram.bot.token}")
     private String botToken;
 
     /** TTL куки совпадает с TTL токена — 8 часов */
