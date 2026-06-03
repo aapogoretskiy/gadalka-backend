@@ -28,6 +28,7 @@ import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -99,7 +100,24 @@ public class DiaryService {
         List<DiaryEntry> entries = diaryRepository.findByUserIdAndFeatureTypeAndCreatedAtBetweenOrderByCreatedAtDesc(userId, featureType, fromDt, toDt);
 
         List<DiaryEntryDto> dtos = entries.stream()
-                .map(e -> new DiaryEntryDto(e.getId(), e.getFeatureType(), e.getCreatedAt(), parsePayload(e.getPayload())))
+                .map(e -> {
+                    JsonNode data;
+                    if (e.getFeatureType() == DiaryFeatureType.COMPATIBILITY && e.getReferenceId() != null) {
+                        data = compatibilityReadingRepository.findById(e.getReferenceId())
+                                .map(r -> {
+                                    try {
+                                        return (JsonNode) objectMapper.valueToTree(resolveCompatibilityPayload(userId, r.getId()));
+                                    } catch (Exception ex) {
+                                        log.warn("Не удалось загрузить живые данные совместимости для diaryEntryId={}, используем снимок", e.getId());
+                                        return parsePayload(e.getPayload());
+                                    }
+                                })
+                                .orElseGet(() -> parsePayload(e.getPayload()));
+                    } else {
+                        data = parsePayload(e.getPayload());
+                    }
+                    return new DiaryEntryDto(e.getId(), e.getFeatureType(), e.getCreatedAt(), data);
+                })
                 .toList();
 
         return new DiaryHistoryResponse(dtos);
@@ -135,15 +153,17 @@ public class DiaryService {
         CompatibilityReading reading = compatibilityReadingRepository.findById(referenceId)
                 .filter(r -> r.getUserId().equals(userId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Расклад совместимости не найден"));
+        boolean unlocked = reading.getUnlockedAt() != null;
         try {
-            return Map.of(
-                    "id", reading.getId(),
-                    "persons", objectMapper.readTree(reading.getPersons()),
-                    "compatibilityScore", reading.getScore(),
-                    "label", reading.getLabel(),
-                    "interpretation", reading.getInterpretation(),
-                    "categories", objectMapper.readTree(reading.getCategories())
-            );
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", reading.getId());
+            payload.put("persons", objectMapper.readTree(reading.getPersons()));
+            payload.put("compatibilityScore", reading.getScore());
+            payload.put("label", reading.getLabel());
+            payload.put("unlocked", unlocked);
+            payload.put("interpretation", unlocked ? reading.getInterpretation() : null);
+            payload.put("categories", unlocked ? objectMapper.readTree(reading.getCategories()) : null);
+            return payload;
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Ошибка чтения данных совместимости", e);
         }
