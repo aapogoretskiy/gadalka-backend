@@ -83,6 +83,10 @@ public class TelegramAuthService {
             // Фиксируем реферальное событие APP_OPEN (если пришли по реферальной ссылке)
             if (startParam != null && !startParam.isBlank()) {
                 referralService.recordAppOpen(telegramUser.getId(), user, isNewUser, startParam);
+            } else if (isNewUser) {
+                // Новый пользователь без start_param: мог открыть через кнопку меню.
+                // Ищем BOT_ENTRY — если кликал по реф-ссылке раньше, зачислим награду рефереру.
+                referralService.tryRecordFromBotEntry(telegramUser.getId(), user);
             }
 
             String token = jwtService.generateToken(String.valueOf(user.getId()));

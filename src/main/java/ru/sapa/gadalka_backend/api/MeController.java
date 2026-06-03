@@ -36,14 +36,21 @@ public class MeController extends BaseController {
      * GET /api/me/referral
      *
      * <p>Возвращает реферальную ссылку текущего пользователя.
-     * Формат ссылки: {@code https://t.me/magicliora_bot?start=ref_<telegramId>}
+     *
+     * <p>Используем формат {@code ?startapp=}, а не {@code ?start=}:
+     * <ul>
+     *   <li>{@code ?start=CODE} — отправляет боту команду /start CODE (BOT_ENTRY), но НЕ
+     *       передаёт {@code start_param} в initData Mini App.</li>
+     *   <li>{@code ?startapp=CODE} — открывает Mini App напрямую и передаёт CODE как
+     *       {@code start_param} в initData, что позволяет серверу зафиксировать реферала.</li>
+     * </ul>
      */
     @GetMapping("/me/referral")
     @Operation(summary = "Получить реферальную ссылку текущего пользователя")
     public ResponseEntity<Map<String, String>> getReferralLink(HttpServletRequest request) {
         User user = resolveUser(request);
         String code = referralService.buildReferralCode(user.getTelegramId());
-        String link = "https://t.me/" + BOT_USERNAME + "?start=" + code;
+        String link = "https://t.me/" + BOT_USERNAME + "?startapp=" + code;
         return ResponseEntity.ok(Map.of(
                 "code", code,
                 "link", link

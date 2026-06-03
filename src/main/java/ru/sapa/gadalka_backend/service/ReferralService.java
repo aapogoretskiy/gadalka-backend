@@ -126,6 +126,30 @@ public class ReferralService {
     }
 
     /**
+     * Пробует начислить реферальное вознаграждение новому пользователю, который открыл
+     * приложение без {@code start_param} (например, через кнопку меню бота).
+     *
+     * <p>Ищет последний {@code BOT_ENTRY} по данному {@code telegramId} — если нашли,
+     * значит пользователь кликал по реф-ссылке до открытия приложения. Делегируем
+     * в {@link #recordAppOpen} с найденным кодом, чтобы начислить награду рефереру.
+     *
+     * <p>Вызывается из {@code TelegramAuthService} только для новых пользователей.
+     *
+     * @param telegramId Telegram ID нового пользователя
+     * @param user       только что созданный пользователь
+     */
+    @Transactional
+    public void tryRecordFromBotEntry(long telegramId, User user) {
+        referralEventRepository
+                .findTopByTelegramIdAndEventTypeOrderByCreatedAtDesc(telegramId, ReferralEventType.BOT_ENTRY)
+                .ifPresent(botEntry -> {
+                    log.info("Найден BOT_ENTRY для нового пользователя без start_param: " +
+                            "telegramId={}, code={}", telegramId, botEntry.getReferralCode());
+                    recordAppOpen(telegramId, user, true, botEntry.getReferralCode());
+                });
+    }
+
+    /**
      * Возвращает реферальный код пользователя (используется для генерации ссылки на фронте).
      * Формат: {@code ref_<telegramId>}
      */
