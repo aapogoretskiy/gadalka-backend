@@ -189,6 +189,53 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
+     * Отправляет рефереру уведомление о том, что его друг зарегистрировался.
+     * Вызывается из {@link ru.sapa.gadalka_backend.service.ReferralService}.
+     *
+     * @param referrerTelegramId Telegram ID реферера
+     * @param newUserName        имя нового пользователя
+     * @param rewardCredits      количество начисленных знаков
+     */
+    public void sendReferralRewardNotification(Long referrerTelegramId, String newUserName, int rewardCredits) {
+        String text = "🎉 *Ваш друг присоединился к Гадалке!*\n\n" +
+                "*" + escapeMarkdown(newUserName) + "* зарегистрировался по вашей реферальной ссылке.\n\n" +
+                "В благодарность мы зачислили вам *" + rewardCredits + " " + pluralZnaki(rewardCredits) + "* ✨\n\n" +
+                "Продолжайте приглашать друзей — за каждого нового пользователя вы получите " +
+                rewardCredits + " " + pluralZnaki(rewardCredits) + " 🔮";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Открыть Гадалку")
+                .webApp(new WebAppInfo(appUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(referrerTelegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Реферальное уведомление отправлено: referrerTelegramId={}, newUser={}, credits={}",
+                    referrerTelegramId, newUserName, rewardCredits);
+        } catch (TelegramApiException e) {
+            // Не критично — кредиты уже зачислены
+            log.warn("Не удалось отправить реферальное уведомление: telegramId={}, error={}",
+                    referrerTelegramId, e.getMessage());
+        }
+    }
+
+    /** Экранирует спецсимволы Markdown для безопасной вставки в текст */
+    private String escapeMarkdown(String text) {
+        return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[");
+    }
+
+    /**
      * Отправляет произвольное сообщение пользователю в рамках массовой рассылки.
      * Если {@code giftAmount} передан — добавляет в конец сообщения информацию о начисленных знаках.
      * Кнопку "Открыть" всегда прикрепляем, чтобы конверсия в возврат была выше.

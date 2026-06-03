@@ -4,41 +4,56 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 import ru.sapa.gadalka_backend.domain.ReferralEvent;
 import ru.sapa.gadalka_backend.domain.User;
-
+import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.ReferralEventType;
 import ru.sapa.gadalka_backend.repository.ReferralEventRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
+import java.util.Optional;
+
 /**
  * Сервис реферальных ссылок.
  *
- * <p>Два типа событий:
+ * <p>Два вида рефералов:
  * <ol>
- *   <li><b>BOT_ENTRY</b> — бот получил команду {@code /start CODE}: пользователь кликнул по ссылке.
- *       Записывается немедленно, {@code userId} и {@code isNewUser} ещё неизвестны.</li>
- *   <li><b>APP_OPEN</b> — Mini App открылся с {@code start_param=CODE} в initData:
- *       пользователь фактически вошёл в приложение.
- *       Записывается при авторизации, {@code userId} и {@code isNewUser} уже известны.</li>
+ *   <li><b>Маркетинговые</b> — коды типа "telegram_channel1", "tiktok_video1".
+ *       Отслеживают откуда пришёл пользователь.</li>
+ *   <li><b>Пользовательские (user-to-user)</b> — коды вида {@code ref_<telegramId>}.
+ *       Когда новый пользователь регистрируется по такой ссылке, реферер получает
+ *       {@value REFERRAL_REWARD_CREDITS} знаков и уведомление в бот.</li>
  * </ol>
  *
- * <p>Дополнительно: при первой регистрации нового пользователя поле
- * {@code users.referral_source} проставляется один раз и больше не меняется.
+ * <p>Три типа событий:
+ * <ul>
+ *   <li><b>BOT_ENTRY</b>    — бот получил /start CODE</li>
+ *   <li><b>APP_OPEN</b>     — Mini App открылся с start_param=CODE в initData</li>
+ *   <li><b>USER_REFERRAL</b>— новый пользователь зарегистрировался по ссылке другого юзера</li>
+ * </ul>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReferralService {
 
+    /** Количество знаков, начисляемых рефереру за каждого приглашённого пользователя. */
+    public static final int REFERRAL_REWARD_CREDITS = 3;
+
+    /** Префикс пользовательских реферальных кодов. */
+    private static final String USER_REF_PREFIX = "ref_";
+
     private final ReferralEventRepository referralEventRepository;
     private final UserRepository userRepository;
+    private final FortuneCreditService fortuneCreditService;
+    private final GadalkaTelegramBot telegramBot;
 
     /**
      * Записывает факт перехода по deep-link через бот ({@code /start CODE}).
      *
      * @param telegramId Telegram ID пользователя
-     * @param code       реферальный код (например, "telegram_channel1")
+     * @param code       реферальный код (например, "telegram_channel1" или "ref_123456789")
      */
     @Transactional
     public void recordBotEntry(long telegramId, String code) {
@@ -58,7 +73,8 @@ public class ReferralService {
      * Записывает факт открытия Mini App с реферальным параметром.
      * Вызывается из {@code TelegramAuthService} при авторизации.
      *
-     * <p>Если пользователь новый — проставляет {@code users.referral_source} (один раз).
+     * <p>Если код пользовательский (начинается с {@code ref_}) и пользователь новый —
+     * дополнительно начисляет знаки рефереру и отправляет ему уведомление в бот.
      *
      * @param telegramId Telegram ID пользователя
      * @param user       авторизованный пользователь (уже сохранён в БД)
@@ -87,5 +103,71 @@ public class ReferralService {
             userRepository.save(user);
             log.info("Источник регистрации сохранён: userId={}, referralSource={}", user.getId(), code);
         }
+
+        // Если это пользовательская реферальная ссылка и пользователь новый — награждаем реферера
+        if (isNewUser && isUserReferralCode(code)) {
+            processUserReferral(user, code);
+        }
+    }
+
+    /**
+     * Возвращает реферальный код пользователя (используется для генерации ссылки на фронте).
+     * Формат: {@code ref_<telegramId>}
+     */
+    public String buildReferralCode(Long telegramId) {
+        return USER_REF_PREFIX + telegramId;
+    }
+
+    // ── Внутренние методы ────────────────────────────────────────────────────
+
+    private boolean isUserReferralCode(String code) {
+        return code.startsWith(USER_REF_PREFIX);
+    }
+
+    /**
+     * Обрабатывает user-to-user реферал:
+     * находит реферера, начисляет знаки, отправляет уведомление, сохраняет событие.
+     */
+    private void processUserReferral(User newUser, String code) {
+        // Парсим telegramId реферера из кода вида "ref_123456789"
+        Long referrerTelegramId;
+        try {
+            referrerTelegramId = Long.parseLong(code.substring(USER_REF_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            log.warn("Некорректный пользовательский реферальный код: code={}", code);
+            return;
+        }
+
+        if (referrerTelegramId.equals(newUser.getTelegramId())) {
+            log.warn("Попытка само-реферала: telegramId={}", referrerTelegramId);
+            return;
+        }
+
+        Optional<User> referrerOpt = userRepository.findByTelegramId(referrerTelegramId);
+        if (referrerOpt.isEmpty()) {
+            log.warn("Реферер не найден: referrerTelegramId={}", referrerTelegramId);
+            return;
+        }
+        User referrer = referrerOpt.get();
+
+        // Начисляем знаки рефереру
+        fortuneCreditService.grantCredits(referrer.getId(), REFERRAL_REWARD_CREDITS, CreditTransactionReason.REFERRAL_REWARD, null);
+
+        // Отправляем благодарственное уведомление в бот
+        String newUserName = newUser.getFirstName() != null ? newUser.getFirstName() : "Новый пользователь";
+        telegramBot.sendReferralRewardNotification(referrer.getTelegramId(), newUserName, REFERRAL_REWARD_CREDITS);
+
+        // Сохраняем событие USER_REFERRAL для отчётности
+        ReferralEvent userReferralEvent = ReferralEvent.builder()
+                .referralCode(code)
+                .telegramId(newUser.getTelegramId())
+                .userId(newUser.getId())
+                .isNewUser(true)
+                .eventType(ReferralEventType.USER_REFERRAL)
+                .referrerUserId(referrer.getId())
+                .build();
+        referralEventRepository.save(userReferralEvent);
+
+        log.info("Реферальное вознаграждение начислено: referrerId={}, newUserId={}, credits={}", referrer.getId(), newUser.getId(), REFERRAL_REWARD_CREDITS);
     }
 }

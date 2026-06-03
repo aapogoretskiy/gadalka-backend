@@ -58,6 +58,13 @@ public class ReferralEvent {
     @Column(name = "is_new_user")
     private Boolean isNewUser;
 
+    /**
+     * Внутренний ID пользователя, который пригласил нового пользователя.
+     * Заполняется только для события USER_REFERRAL.
+     */
+    @Column(name = "referrer_user_id")
+    private Long referrerUserId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false, length = 50)
     private ReferralEventType eventType;

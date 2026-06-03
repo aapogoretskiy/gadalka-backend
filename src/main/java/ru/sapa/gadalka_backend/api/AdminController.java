@@ -3,6 +3,7 @@ package ru.sapa.gadalka_backend.api;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -17,6 +18,7 @@ import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
+import ru.sapa.gadalka_backend.service.ReferralStatsService;
 
 import java.util.List;
 import java.util.Map;
@@ -39,6 +41,7 @@ public class AdminController {
     private final GadalkaTelegramBot telegramBot;
     private final BroadcastService broadcastService;
     private final ReportService reportService;
+    private final ReferralStatsService referralStatsService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -84,9 +87,8 @@ public class AdminController {
      * <p>Детальная информация о пользователе:
      * баланс, суммарно начислено/потрачено, реферальный источник, последняя активность.
      *
-     * <p>Примечание: текущая реферальная система трекает маркетинговые кампании
-     * (referral_source — откуда пришёл пользователь), а не пользователь-пользователь
-     * приглашения. Счётчик приглашённых друзей — отдельная фича.
+     * <p>Если пользователь пришёл по реферальной ссылке другого пользователя (referral_source = "ref_<telegramId>"),
+     * дополнительно возвращается поле {@code referrerName} с именем реферера.
      */
     @GetMapping("/users/{id}")
     public ResponseEntity<?> getUser(@PathVariable Long id, HttpServletRequest request) {
@@ -111,6 +113,21 @@ public class AdminController {
                 .mapToInt(l -> l.getDelta())
                 .sum();
 
+        String referrerName = StringUtils.EMPTY;
+        String referralSource = user.getReferralSource() != null ? user.getReferralSource() : StringUtils.EMPTY;
+        if (referralSource.startsWith("ref_")) {
+            try {
+                Long referrerTelegramId = Long.parseLong(referralSource.substring(4));
+                referrerName = userRepository.findByTelegramId(referrerTelegramId)
+                        .map(userByTgId -> {
+                            String name = userByTgId.getFirstName() != null ? userByTgId.getFirstName() : StringUtils.EMPTY;
+                            if (userByTgId.getUsername() != null) name += " (@" + userByTgId.getUsername() + ")";
+                            return name.trim();
+                        })
+                        .orElse("Удалён");
+            } catch (NumberFormatException ignored) { }
+        }
+
         return ResponseEntity.ok(Map.ofEntries(
                 Map.entry("id", user.getId()),
                 Map.entry("telegramId", user.getTelegramId()),
@@ -120,7 +137,8 @@ public class AdminController {
                 Map.entry("createdAt", user.getCreatedAt()),
                 Map.entry("lastActiveAt", user.getLastActiveAt() != null ? user.getLastActiveAt() : ""),
                 Map.entry("banned", user.isBanned()),
-                Map.entry("referralSource", user.getReferralSource() != null ? user.getReferralSource() : ""),
+                Map.entry("referralSource", referralSource),
+                Map.entry("referrerName", referrerName),
                 Map.entry("balance", balance),
                 Map.entry("totalSpent", totalSpent),
                 Map.entry("totalGranted", totalGranted)
@@ -215,6 +233,35 @@ public class AdminController {
 
         String info = toAll ? "всем пользователям" : "выбранным (" + body.userIds().size() + ")";
         return ResponseEntity.ok(Map.of("message", "Рассылка запущена " + info));
+    }
+
+    /**
+     * GET /api/admin/referral-stats
+     *
+     * <p>Аналитика реферальной системы:
+     * <ul>
+     *   <li>Маркетинговые источники — клики, открытия, новые пользователи, конверсия</li>
+     *   <li>Топ-50 пользователей по количеству приглашённых</li>
+     * </ul>
+     */
+    @GetMapping("/referral-stats")
+    public ResponseEntity<?> getReferralStats(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил реферальную аналитику", adminId);
+        return ResponseEntity.ok(referralStatsService.buildStats());
+    }
+
+    /**
+     * GET /api/admin/users/{id}/invites
+     *
+     * <p>Список пользователей, которых пригласил реферер с указанным id.
+     * Возвращает пустой массив если никого не приглашал.
+     */
+    @GetMapping("/users/{id}/invites")
+    public ResponseEntity<?> getUserInvites(@PathVariable Long id, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил список приглашённых userId={}", adminId, id);
+        return ResponseEntity.ok(referralStatsService.getInvitedUsers(id));
     }
 
     /** DTO для запроса рассылки */
