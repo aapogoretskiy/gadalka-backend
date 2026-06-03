@@ -1,7 +1,7 @@
 package ru.sapa.gadalka_backend.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
@@ -35,7 +35,6 @@ import java.util.Optional;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ReferralService {
 
     /** Количество знаков, начисляемых рефереру за каждого приглашённого пользователя. */
@@ -47,7 +46,23 @@ public class ReferralService {
     private final ReferralEventRepository referralEventRepository;
     private final UserRepository userRepository;
     private final FortuneCreditService fortuneCreditService;
+
+    /**
+     * Бот инжектируется лениво (@Lazy), чтобы разорвать циклическую зависимость:
+     * GadalkaTelegramBot → ReferralService → GadalkaTelegramBot.
+     * Spring создаст прокси при старте и подставит реальный бин при первом обращении.
+     */
     private final GadalkaTelegramBot telegramBot;
+
+    public ReferralService(ReferralEventRepository referralEventRepository,
+                           UserRepository userRepository,
+                           FortuneCreditService fortuneCreditService,
+                           @Lazy GadalkaTelegramBot telegramBot) {
+        this.referralEventRepository = referralEventRepository;
+        this.userRepository = userRepository;
+        this.fortuneCreditService = fortuneCreditService;
+        this.telegramBot = telegramBot;
+    }
 
     /**
      * Записывает факт перехода по deep-link через бот ({@code /start CODE}).
