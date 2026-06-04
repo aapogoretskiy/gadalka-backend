@@ -11,4 +11,6 @@ public class TelegramAuthResponse {
     private TelegramUserDto user;
     private String jwtToken;
     private int readingBalance;
+    /** true если пользователь зарегистрировался впервые (для приветственного сообщения на фронте) */
+    private boolean isNewUser;
 }

@@ -44,6 +44,10 @@ public class PaymentProduct {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 
+    /** Бонусные знаки сверх основного пакета (0 для большинства, 2 для PACK_15) */
+    @Column(name = "bonus_credits", nullable = false)
+    private Integer bonusCredits;
+
     /** Порядок отображения в каталоге (меньше = выше) */
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;

@@ -93,18 +93,6 @@ public class FortuneCreditService {
     }
 
     /**
-     * Списывает 1 знак за использование функции.
-     * Удобный вариант для фич с фиксированной стоимостью в 1 кредит (совместимость, и т.д.).
-     *
-     * @param userId      ID пользователя
-     * @param featureType тип использованной функции
-     */
-    @Transactional
-    public void spendCredit(Long userId, DiaryFeatureType featureType) {
-        spendCredits(userId, featureType, 1);
-    }
-
-    /**
      * Списывает {@code count} знаков за использование функции.
      * Использует PESSIMISTIC_WRITE lock — защита от гонки при одновременных запросах.
      * <p>

@@ -85,7 +85,7 @@ public class CompatibilityService {
 
         if (reading.getUnlockedAt() == null) {
             // Ещё не разблокирован — списываем кредит
-            fortuneCreditService.spendCredit(user.getId(), DiaryFeatureType.COMPATIBILITY);
+            fortuneCreditService.spendCredits(user.getId(), DiaryFeatureType.COMPATIBILITY, 2);
             reading.setUnlockedAt(OffsetDateTime.now());
             compatibilityReadingRepository.save(reading);
             log.info("Расклад совместимости разблокирован: readingId={}, userId={}", readingId, user.getId());

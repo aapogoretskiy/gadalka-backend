@@ -85,7 +85,7 @@ public class PaymentService {
                 .status(PaymentStatus.PENDING)
                 .amountMinor(strategy.getAmountMinor(product))
                 .currency(strategy.getCurrency())
-                .creditsToGrant(product.getReadingsCount())
+                .creditsToGrant(product.getReadingsCount() + product.getBonusCredits())
                 .build();
         payment = paymentRepository.save(payment);
 

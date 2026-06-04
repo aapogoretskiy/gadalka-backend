@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.telegram.TelegramAuthResponse;
 import ru.sapa.gadalka_backend.api.dto.telegram.TelegramUserDto;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.mapper.UserMapper;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
@@ -75,6 +76,8 @@ public class TelegramAuthService {
             if (isNewUser) {
                 log.info("Зарегистрирован новый пользователь: id={}, telegramId={}, username={}",
                         user.getId(), user.getTelegramId(), user.getUsername());
+                fortuneCreditService.grantCredits(user.getId(), 5, CreditTransactionReason.FREE_GRANT, null);
+                log.info("Начислено 5 приветственных знаков: userId={}", user.getId());
             } else {
                 log.info("Повторный вход пользователя: id={}, telegramId={}, username={}",
                         user.getId(), user.getTelegramId(), user.getUsername());
@@ -95,6 +98,7 @@ public class TelegramAuthService {
                     .user(userMapper.toDto(user))
                     .jwtToken(token)
                     .readingBalance(fortuneCreditService.getBalance(user.getId()))
+                    .isNewUser(isNewUser)
                     .build();
 
         } catch (Exception e) {
