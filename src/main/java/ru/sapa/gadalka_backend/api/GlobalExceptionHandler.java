@@ -12,6 +12,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import ru.sapa.gadalka_backend.api.dto.ErrorResponse;
 import ru.sapa.gadalka_backend.exception.FreeFortuneAlreadyUsedException;
 import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
+import ru.sapa.gadalka_backend.exception.LimitExceededException;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.exception.RateLimitExceededException;
 import ru.sapa.gadalka_backend.exception.ProductNotFoundException;
@@ -31,6 +32,17 @@ public class GlobalExceptionHandler {
                                                          HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .body(new ErrorResponse(HttpStatus.TOO_MANY_REQUESTS.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    @ExceptionHandler(LimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleLimitExceeded(LimitExceededException ex,
+                                                              HttpServletRequest request) {
+        log.warn("Превышен лимит [{} {}]: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(),
                         ex.getMessage(),
                         request.getRequestURI(),
                         LocalDateTime.now()));

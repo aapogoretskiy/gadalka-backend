@@ -1,6 +1,7 @@
 package ru.sapa.gadalka_backend.api;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -10,15 +11,22 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
+import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
+import ru.sapa.gadalka_backend.api.dto.feedback.TicketDetailsResponse;
+import ru.sapa.gadalka_backend.api.dto.feedback.TicketSummaryResponse;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
+import ru.sapa.gadalka_backend.domain.SupportTicket;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
+import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
+import ru.sapa.gadalka_backend.service.SupportTicketService;
 
 import java.util.List;
 import java.util.Map;
@@ -42,6 +50,7 @@ public class AdminController {
     private final BroadcastService broadcastService;
     private final ReportService reportService;
     private final ReferralStatsService referralStatsService;
+    private final SupportTicketService supportTicketService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -278,6 +287,87 @@ public class AdminController {
         Long adminId = (Long) request.getAttribute("adminTelegramId");
         log.info("Admin {} запросил отчёты", adminId);
         return ResponseEntity.ok(reportService.buildReport());
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  SUPPORT TICKETS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * GET /api/admin/tickets?status=OPEN&page=0&size=20
+     *
+     * <p>Список заявок обратной связи с пагинацией.
+     * Параметр {@code status} опционален: OPEN, CLOSED или отсутствует (все заявки).
+     */
+    @GetMapping("/tickets")
+    public ResponseEntity<Page<TicketSummaryResponse>> getTickets(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил список заявок: status={}, page={}", adminId, status, page);
+
+        SupportTicketStatus statusFilter = (status != null && !status.isBlank())
+                ? SupportTicketStatus.valueOf(status.toUpperCase())
+                : null;
+
+        return ResponseEntity.ok(supportTicketService.getTickets(statusFilter, page, size)
+                .map(this::toTicketSummary));
+    }
+
+    /**
+     * GET /api/admin/tickets/{id}
+     *
+     * <p>Детальная информация о заявке: текст обращения, пользователь, статус, история.
+     */
+    @GetMapping("/tickets/{id}")
+    public ResponseEntity<TicketDetailsResponse> getTicket(@PathVariable Long id, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил заявку ticketId={}", adminId, id);
+
+        return supportTicketService.getTicket(id)
+                .flatMap(ticket -> userRepository.findById(ticket.getUserId())
+                        .map(user -> ResponseEntity.ok(TicketDetailsResponse.from(ticket, user))))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * POST /api/admin/tickets/{id}/close
+     * Body: { "creditsToGift": 5 } — оба поля опциональны.
+     *
+     * <p>Закрывает заявку. Если {@code creditsToGift > 0} — начисляет знаки
+     * и отправляет пользователю уведомление в Telegram.
+     */
+    @PostMapping("/tickets/{id}/close")
+    public ResponseEntity<CloseTicketResponse> closeTicket(
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) CloseTicketRequest body,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        Integer creditsToGift = (body != null) ? body.creditsToGift() : null;
+
+        return supportTicketService.closeTicket(id, adminId, creditsToGift)
+                .map(ticket -> ResponseEntity.ok(new CloseTicketResponse(
+                        "Заявка закрыта",
+                        ticket.getId(),
+                        ticket.getCreditsGifted() != null ? ticket.getCreditsGifted() : 0
+                )))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /** Краткое представление заявки для списка */
+    private TicketSummaryResponse toTicketSummary(SupportTicket ticket) {
+        String userName = userRepository.findById(ticket.getUserId())
+                .map(u -> {
+                    String name = u.getFirstName() != null ? u.getFirstName() : "";
+                    if (u.getUsername() != null) name += " (@" + u.getUsername() + ")";
+                    return name.trim();
+                })
+                .orElse("userId=" + ticket.getUserId());
+        return TicketSummaryResponse.from(ticket, userName);
     }
 
     /** Краткое представление пользователя для таблицы со списком */

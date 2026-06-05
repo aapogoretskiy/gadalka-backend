@@ -16,5 +16,7 @@ public enum CreditTransactionReason {
     /** Массовое начисление знаков через функцию рассылки */
     ADMIN_BROADCAST,
     /** Начисление за приглашение нового пользователя по реферальной ссылке */
-    REFERRAL_REWARD
+    REFERRAL_REWARD,
+    /** Компенсационный подарок при закрытии заявки обратной связи */
+    SUPPORT_GIFT
 }
