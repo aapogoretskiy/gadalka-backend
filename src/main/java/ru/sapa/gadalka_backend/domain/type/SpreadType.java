@@ -9,14 +9,14 @@ import lombok.Getter;
 @Getter
 public enum SpreadType {
 
-    /** Классика: Прошлое · Настоящее · Будущее (3 карты, 2 знака) */
-    THREE_CARD(2),
+    /** Классика: Прошлое · Настоящее · Будущее (3 карты, 3 знака) */
+    THREE_CARD(3),
 
-    /** Подкова (7 карт, 4 знака) */
-    HORSESHOE(4),
+    /** Подкова (7 карт, 6 знаков) */
+    HORSESHOE(6),
 
-    /** Кельтский крест (10 карт, 6 знаков) */
-    CELTIC_CROSS(6);
+    /** Кельтский крест (10 карт, 9 знаков) */
+    CELTIC_CROSS(9);
 
     private final int creditCost;
 
