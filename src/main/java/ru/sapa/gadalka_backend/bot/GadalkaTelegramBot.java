@@ -26,6 +26,7 @@ import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.stars.TelegramStarsService;
 
+import java.io.ByteArrayInputStream;
 import java.util.List;
 
 @Slf4j
@@ -280,44 +281,95 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
-     * Отправляет фото с подписью (caption) в рамках массовой рассылки.
-     * Используется когда в рассылке задан photoUrl.
-     * Если photoUrl невалиден или Telegram отклоняет запрос — бросаем исключение
-     * (BroadcastService посчитает как failed-отправку).
+     * Первая отправка фото в рамках рассылки: загружает байты на серверы Telegram,
+     * получает из ответа file_id и возвращает его для переиспользования.
      *
-     * @param telegramId Telegram ID получателя
-     * @param photoUrl   URL публично доступного изображения
-     * @param caption    подпись под фото (поддерживает Markdown)
-     * @param giftAmount количество начисленных знаков (null — не упоминать)
+     * <p>Telegram сохраняет файл у себя, и все последующие отправки можно делать
+     * через {@link #sendPhotoBroadcastMessage(Long, String, String, Integer)},
+     * передавая полученный file_id — без повторной загрузки байтов.
+     *
+     * @param telegramId  Telegram ID первого получателя
+     * @param photoBytes  байты изображения
+     * @param fileName    имя файла (нужно Telegram для определения MIME-типа)
+     * @param caption     подпись под фото (поддерживает Markdown)
+     * @param giftAmount  количество начисленных знаков (null — не упоминать)
+     * @return file_id сохранённого на серверах Telegram файла
      */
-    public void sendPhotoBroadcastMessage(Long telegramId, String photoUrl, String caption, Integer giftAmount) {
-        String fullCaption = caption;
-        if (giftAmount != null && giftAmount > 0) {
-            fullCaption += "\n\n🎁 На ваш счёт зачислено *" + giftAmount + " " + pluralZnaki(giftAmount) + "*";
-        }
+    public String sendPhotoBroadcastMessageUpload(Long telegramId,
+                                                  byte[] photoBytes,
+                                                  String fileName,
+                                                  String caption,
+                                                  Integer giftAmount) {
+        String fullCaption = buildCaption(caption, giftAmount);
 
-        InlineKeyboardButton button = InlineKeyboardButton.builder()
-                .text("🔮 Открыть Гадалку")
-                .webApp(new WebAppInfo(appUrl))
-                .build();
+        InlineKeyboardMarkup keyboard = buildOpenAppKeyboard();
 
-        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
-                .keyboard(List.of(new InlineKeyboardRow(button)))
-                .build();
-
-        SendPhoto photo = SendPhoto.builder()
+        SendPhoto sendPhoto = SendPhoto.builder()
                 .chatId(telegramId)
-                .photo(new InputFile(photoUrl))
+                .photo(new InputFile(new ByteArrayInputStream(photoBytes), fileName != null ? fileName : "photo.jpg"))
                 .caption(fullCaption)
                 .parseMode("Markdown")
                 .replyMarkup(keyboard)
                 .build();
 
         try {
-            telegramClient.execute(photo);
+            var response = telegramClient.execute(sendPhoto);
+            // Берём самый большой вариант фото — у него самый стабильный file_id
+            var photos = response.getPhoto();
+            return photos.get(photos.size() - 1).getFileId();
+        } catch (TelegramApiException e) {
+            throw new RuntimeException("Telegram API photo upload error for telegramId=" + telegramId + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Повторная отправка фото в рамках рассылки: использует file_id,
+     * полученный при первой отправке через {@link #sendPhotoBroadcastMessageUpload}.
+     * Telegram берёт файл со своих серверов — байты по сети не передаются.
+     *
+     * @param telegramId Telegram ID получателя
+     * @param fileId     file_id, ранее полученный от Telegram
+     * @param caption    подпись под фото (поддерживает Markdown)
+     * @param giftAmount количество начисленных знаков (null — не упоминать)
+     */
+    public void sendPhotoBroadcastMessage(Long telegramId,
+                                          String fileId,
+                                          String caption,
+                                          Integer giftAmount) {
+        String fullCaption = buildCaption(caption, giftAmount);
+
+        SendPhoto sendPhoto = SendPhoto.builder()
+                .chatId(telegramId)
+                .photo(new InputFile(fileId))
+                .caption(fullCaption)
+                .parseMode("Markdown")
+                .replyMarkup(buildOpenAppKeyboard())
+                .build();
+
+        try {
+            telegramClient.execute(sendPhoto);
         } catch (TelegramApiException e) {
             throw new RuntimeException("Telegram API photo error for telegramId=" + telegramId + ": " + e.getMessage(), e);
         }
+    }
+
+    /** Строит подпись: основной текст + опциональная строка о подарке */
+    private String buildCaption(String caption, Integer giftAmount) {
+        if (giftAmount != null && giftAmount > 0) {
+            return caption + "\n\n🎁 На ваш счёт зачислено *" + giftAmount + " " + pluralZnaki(giftAmount) + "*";
+        }
+        return caption;
+    }
+
+    /** Клавиатура с кнопкой "Открыть Гадалку" — используется во всех рассылочных сообщениях */
+    private InlineKeyboardMarkup buildOpenAppKeyboard() {
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Открыть Гадалку")
+                .webApp(new WebAppInfo(appUrl))
+                .build();
+        return InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
     }
 
     /**

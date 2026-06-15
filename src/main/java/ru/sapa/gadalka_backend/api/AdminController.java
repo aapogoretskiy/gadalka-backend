@@ -11,6 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
@@ -18,12 +19,7 @@ import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
 import ru.sapa.gadalka_backend.api.dto.feedback.TicketDetailsResponse;
 import ru.sapa.gadalka_backend.api.dto.feedback.TicketSummaryResponse;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
-import ru.sapa.gadalka_backend.domain.CompatibilityReading;
-import ru.sapa.gadalka_backend.domain.DailyCard;
-import ru.sapa.gadalka_backend.domain.Fortune;
-import ru.sapa.gadalka_backend.domain.NumerologyDayReading;
-import ru.sapa.gadalka_backend.domain.SupportTicket;
-import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.*;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
@@ -138,7 +134,7 @@ public class AdminController {
                 .sum();
         int totalGranted = logs.stream()
                 .filter(l -> l.getDelta() > 0)
-                .mapToInt(l -> l.getDelta())
+                .mapToInt(FortuneCreditLogEntry::getDelta)
                 .sum();
 
         String referrerName = StringUtils.EMPTY;
@@ -340,26 +336,48 @@ public class AdminController {
 
     /**
      * POST /api/admin/broadcast
-     * Body: { "message": "...", "giftAmount": 5, "userIds": [1, 2, 3] }
+     * Content-Type: multipart/form-data
+     *
+     * <p>Части запроса:
+     * <ul>
+     *   <li>{@code data} — JSON-строка с полями message, giftAmount, userIds, onlyAdmins</li>
+     *   <li>{@code photo} — опциональный файл изображения</li>
+     * </ul>
      *
      * <p>Запускает массовую рассылку в фоновом потоке и сразу возвращает 200.
-     * Если {@code userIds} пусто или null — рассылка по всем зарегистрированным пользователям.
+     * Приоритет аудитории: userIds > onlyAdmins > все пользователи.
      * Если {@code giftAmount} > 0 — каждому получателю начисляются знаки.
      */
-    @PostMapping("/broadcast")
-    public ResponseEntity<?> broadcast(@RequestBody BroadcastRequest body, HttpServletRequest request) {
+    @PostMapping(value = "/broadcast", consumes = "multipart/form-data")
+    public ResponseEntity<?> broadcast(
+            @RequestPart("data") BroadcastRequest body,
+            @RequestPart(value = "photo", required = false) MultipartFile photo,
+            HttpServletRequest request) throws java.io.IOException {
+
         Long adminId = (Long) request.getAttribute("adminTelegramId");
 
         if (body.message() == null || body.message().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "message не может быть пустым"));
         }
 
-        boolean toAll = body.userIds() == null || body.userIds().isEmpty();
-        log.info("Admin {} запустил рассылку: toAll={}, giftAmount={}, recipients={}", adminId, toAll, body.giftAmount(), toAll ? "all" : body.userIds().size());
+        byte[] photoBytes = (photo != null && !photo.isEmpty()) ? photo.getBytes() : null;
+        String photoFileName = (photo != null && !photo.isEmpty()) ? photo.getOriginalFilename() : null;
 
-        broadcastService.broadcast(body.message(), body.giftAmount(), body.userIds(), body.photoUrl());
+        boolean toAdmins = Boolean.TRUE.equals(body.onlyAdmins());
+        boolean toSelected = body.userIds() != null && !body.userIds().isEmpty();
+        boolean toAll = !toAdmins && !toSelected;
 
-        String info = toAll ? "всем пользователям" : "выбранным (" + body.userIds().size() + ")";
+        log.info("Admin {} запустил рассылку: toAll={}, toAdmins={}, toSelected={}, giftAmount={}, hasPhoto={}",
+                adminId,
+                toAll,
+                toAdmins,
+                toSelected ? body.userIds().size() : 0,
+                body.giftAmount(),
+                photoBytes != null);
+
+        broadcastService.broadcast(body.message(), body.giftAmount(), body.userIds(), photoBytes, photoFileName, toAdmins);
+
+        String info = toAdmins ? "администраторам" : toSelected ? "выбранным (" + body.userIds().size() + ")" : "всем пользователям";
         return ResponseEntity.ok(Map.of("message", "Рассылка запущена " + info));
     }
 
@@ -393,10 +411,12 @@ public class AdminController {
     }
 
     /**
-     * DTO для запроса рассылки.
-     * photoUrl — опциональный URL изображения; если задан, отправляется SendPhoto вместо SendMessage.
+     * DTO для JSON-части запроса рассылки (part "data" в multipart/form-data).
+     * Фото передаётся отдельной частью "photo", а не через это DTO.
+     *
+     * @param onlyAdmins если true — рассылка только администраторам из ADMIN_TELEGRAM_IDS
      */
-    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, String photoUrl) {}
+    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, Boolean onlyAdmins) {}
 
     /**
      * GET /api/admin/reports
