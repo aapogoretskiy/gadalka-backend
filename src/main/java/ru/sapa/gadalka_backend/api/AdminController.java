@@ -212,45 +212,48 @@ public class AdminController {
         // Гадания (расклады)
         for (Fortune fortune : fortuneRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
             String type = fortune.getSpreadType() != null ? fortune.getSpreadType().name() : "THREE_CARD";
-            actions.add(Map.of(
-                    "type", "FORTUNE_" + type,
-                    "label", fortuneLabel(type),
-                    "date", fortune.getCreatedAt().toString(),
-                    "details", fortune.getQuestion().length() > 60
-                            ? fortune.getQuestion().substring(0, 60) + "…"
-                            : fortune.getQuestion()
-            ));
+            String question = fortune.getQuestion();
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("type",           "FORTUNE_" + type);
+            item.put("label",          fortuneLabel(type));
+            item.put("date",           fortune.getCreatedAt().toString());
+            item.put("details",        question.length() > 60 ? question.substring(0, 60) + "…" : question);
+            item.put("interpretation", fortune.getInterpretation());
+            actions.add(item);
         }
 
         // Совместимость
         for (CompatibilityReading cr : compatibilityReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
-            actions.add(Map.of(
-                    "type", "COMPATIBILITY",
-                    "label", "Совместимость",
-                    "date", cr.getCreatedAt().toString(),
-                    "details", cr.getLabel() + " — " + cr.getScore() + "%"
-            ));
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("type",           "COMPATIBILITY");
+            item.put("label",          "Совместимость");
+            item.put("date",           cr.getCreatedAt().toString());
+            item.put("details",        cr.getLabel() + " — " + cr.getScore() + "%");
+            item.put("interpretation", cr.getInterpretation());
+            actions.add(item);
         }
 
         // Нумерология
         for (NumerologyDayReading nr : numerologyDayReadingRepository.findByUserIdOrderByDateDesc(id, pageable)) {
-            actions.add(Map.of(
-                    "type", "NUMEROLOGY",
-                    "label", "Число дня",
-                    "date", nr.getDate().toString(),
-                    "details", "Код дня: " + nr.getDayCode()
-            ));
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("type",           "NUMEROLOGY");
+            item.put("label",          "Число дня");
+            item.put("date",           nr.getDate().toString());
+            item.put("details",        "Код дня: " + nr.getDayCode());
+            item.put("interpretation", nr.getAffirmation());
+            actions.add(item);
         }
 
-        // Карта дня
+        // Карта дня (AI-интерпретации нет — только название карты)
         for (DailyCard dc : dailyCardRepository.findByUserIdOrderByDateDesc(id, pageable)) {
             String cardName = dc.getCard() != null ? dc.getCard().getName() : "—";
-            actions.add(Map.of(
-                    "type", "DAILY_CARD",
-                    "label", "Карта дня",
-                    "date", dc.getDate().toString(),
-                    "details", cardName
-            ));
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("type",           "DAILY_CARD");
+            item.put("label",          "Карта дня");
+            item.put("date",           dc.getDate().toString());
+            item.put("details",        cardName);
+            item.put("interpretation", null);
+            actions.add(item);
         }
 
         // Сортируем общий список по дате убыванию и обрезаем до limit
