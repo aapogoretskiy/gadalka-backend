@@ -20,13 +20,13 @@ spring:
   # Лимит размера тела HTTP-запроса (защита от DoS)
   servlet:
     multipart:
-      max-file-size: 1MB
-      max-request-size: 1MB
+      max-file-size: 20MB
+      max-request-size: 20MB
 
 server:
   tomcat:
     # Максимальный размер тела для обычных POST-запросов
-    max-swallow-size: 1MB
+    max-swallow-size: 20MB
 
 telegram:
   auth:
