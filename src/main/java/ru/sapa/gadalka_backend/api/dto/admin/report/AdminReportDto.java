@@ -7,6 +7,7 @@ package ru.sapa.gadalka_backend.api.dto.admin.report;
 public record AdminReportDto(
         UsersReportDto users,
         FortunesReportDto fortunes,
+        CompatibilityReportDto compatibility,
         ActionsTodayDto actionsToday,
         ReturningUsersDto returningUsers,
         PaymentsReportDto payments,

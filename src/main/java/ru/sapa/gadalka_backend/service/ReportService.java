@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.report.ActionsTodayDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
+import ru.sapa.gadalka_backend.api.dto.admin.report.CompatibilityReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.CreditsReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.FortunesReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.PaymentsReportDto;
@@ -55,6 +56,7 @@ public class ReportService {
         return new AdminReportDto(
                 buildUsersSection(minus1d, minus7d, minus30d),
                 buildFortunesSection(minus7d, minus30d),
+                buildCompatibilitySection(minus7d, minus30d),
                 buildActionsTodaySection(minus1d),
                 buildReturningUsersSection(minus1d, minus7d, minus30d),
                 buildPaymentsSection(minus7d, minus30d),
@@ -86,6 +88,18 @@ public class ReportService {
                 fortuneRepository.count(),
                 fortuneRepository.countByCreatedAtAfter(minus7d),
                 fortuneRepository.countByCreatedAtAfter(minus30d)
+        );
+    }
+
+    // ── Совместимость ────────────────────────────────────────────────────────
+
+    private CompatibilityReportDto buildCompatibilitySection(
+            OffsetDateTime minus7d, OffsetDateTime minus30d) {
+
+        return new CompatibilityReportDto(
+                compatibilityReadingRepository.count(),
+                compatibilityReadingRepository.countByCreatedAtAfter(minus7d),
+                compatibilityReadingRepository.countByCreatedAtAfter(minus30d)
         );
     }
 
