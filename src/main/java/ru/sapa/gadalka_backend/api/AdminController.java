@@ -21,7 +21,9 @@ import ru.sapa.gadalka_backend.api.dto.feedback.TicketSummaryResponse;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 import ru.sapa.gadalka_backend.domain.*;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
+import ru.sapa.gadalka_backend.domain.type.FeedbackTargetType;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
+import ru.sapa.gadalka_backend.repository.ActionFeedbackRepository;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
 import ru.sapa.gadalka_backend.repository.DailyCardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Административные операции над пользователями.
@@ -65,6 +68,7 @@ public class AdminController {
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final DailyCardRepository dailyCardRepository;
+    private final ActionFeedbackRepository actionFeedbackRepository;
     private final GadalkaTelegramBot telegramBot;
     private final BroadcastService broadcastService;
     private final ReportService reportService;
@@ -236,50 +240,88 @@ public class AdminController {
 
         var actions = new ArrayList<Map<String, Object>>();
 
-        // Гадания (расклады)
-        for (Fortune fortune : fortuneRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+        // ── Гадания (расклады) ────────────────────────────────────────────────
+        List<Fortune> fortunes = fortuneRepository.findByUserIdOrderByCreatedAtDesc(id, pageable);
+        List<Long> fortuneIds = fortunes
+                .stream()
+                .map(Fortune::getId)
+                .collect(Collectors.toList());
+
+        // Батч-загрузка фидбэков для гаданий (один запрос вместо N)
+        Map<Long, ActionFeedback> fortuneFeedbacks = actionFeedbackRepository
+                .findByActionTypeAndActionIdIn(FeedbackTargetType.FORTUNE, fortuneIds)
+                .stream()
+                .collect(Collectors.toMap(ActionFeedback::getActionId, fb -> fb));
+
+        for (Fortune fortune : fortunes) {
             String type = fortune.getSpreadType() != null ? fortune.getSpreadType().name() : "THREE_CARD";
             String question = fortune.getQuestion();
+            ActionFeedback fb = fortuneFeedbacks.get(fortune.getId());
             var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             fortune.getId());
             item.put("type",           "FORTUNE_" + type);
             item.put("label",          fortuneLabel(type));
             item.put("date",           fortune.getCreatedAt().toString());
             item.put("details",        question.length() > 60 ? question.substring(0, 60) + "…" : question);
             item.put("interpretation", fortune.getInterpretation());
+            item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
+            item.put("feedbackComment", fb != null ? fb.getComment() : null);
             actions.add(item);
         }
 
-        // Совместимость
-        for (CompatibilityReading cr : compatibilityReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+        // ── Совместимость ────────────────────────────────────────────────────
+        List<CompatibilityReading> readings = compatibilityReadingRepository
+                .findByUserIdOrderByCreatedAtDesc(id, pageable);
+        List<Long> readingIds = readings
+                .stream()
+                .map(CompatibilityReading::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, ActionFeedback> compatFeedbacks = actionFeedbackRepository
+                .findByActionTypeAndActionIdIn(FeedbackTargetType.COMPATIBILITY, readingIds)
+                .stream()
+                .collect(Collectors.toMap(ActionFeedback::getActionId, fb -> fb));
+
+        for (CompatibilityReading cr : readings) {
+            ActionFeedback fb = compatFeedbacks.get(cr.getId());
             var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             cr.getId());
             item.put("type",           "COMPATIBILITY");
             item.put("label",          "Совместимость");
             item.put("date",           cr.getCreatedAt().toString());
             item.put("details",        cr.getLabel() + " — " + cr.getScore() + "%");
             item.put("interpretation", cr.getInterpretation());
+            item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
+            item.put("feedbackComment", fb != null ? fb.getComment() : null);
             actions.add(item);
         }
 
-        // Нумерология
+        // ── Нумерология ─────────────────────────────────────────────────────
         for (NumerologyDayReading nr : numerologyDayReadingRepository.findByUserIdOrderByDateDesc(id, pageable)) {
             var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             nr.getId());
             item.put("type",           "NUMEROLOGY");
             item.put("label",          "Число дня");
             item.put("date",           nr.getDate().toString());
             item.put("details",        "Код дня: " + nr.getDayCode());
             item.put("interpretation", nr.getAffirmation());
+            item.put("feedbackRating", null);
+            item.put("feedbackComment", null);
             actions.add(item);
         }
 
-        // Карта дня (AI-интерпретации нет — только название карты)
+        // ── Карта дня ────────────────────────────────────────────────────────
         for (DailyCard dc : dailyCardRepository.findByUserIdOrderByDateDesc(id, pageable)) {
             String cardName = dc.getCard() != null ? dc.getCard().getName() : "—";
             var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             dc.getId());
             item.put("type",           "DAILY_CARD");
             item.put("label",          "Карта дня");
             item.put("date",           dc.getDate().toString());
             item.put("details",        cardName);
             item.put("interpretation", null);
+            item.put("feedbackRating", null);
+            item.put("feedbackComment", null);
             actions.add(item);
         }
 

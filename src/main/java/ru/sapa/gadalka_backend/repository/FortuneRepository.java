@@ -12,6 +12,9 @@ import java.util.Optional;
 public interface FortuneRepository extends JpaRepository<Fortune, Long> {
     Optional<Fortune> findByUserIdAndQuestionHash(Long userId, String questionHash);
 
+    /** Проверка владельца — используется FortuneFeedbackValidator */
+    boolean existsByIdAndUserId(Long id, Long userId);
+
     // ── История действий пользователя (для админки) ──────────────────────────
 
     /** Последние гадания пользователя (для lazy-панели в AdminController) */

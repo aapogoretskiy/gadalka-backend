@@ -12,6 +12,9 @@ public interface CompatibilityReadingRepository extends JpaRepository<Compatibil
     Optional<CompatibilityReading> findByUserIdAndPersonsHash(Long userId, String personsHash);
     Optional<CompatibilityReading> findByIdAndUserId(Long id, Long userId);
 
+    /** Проверка владельца — используется CompatibilityFeedbackValidator */
+    boolean existsByIdAndUserId(Long id, Long userId);
+
     // ── История действий пользователя ────────────────────────────────────────
     List<CompatibilityReading> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
