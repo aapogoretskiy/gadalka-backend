@@ -18,6 +18,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** Поиск по username (без учёта регистра, частичное совпадение) для админки */
     Page<User> findByUsernameContainingIgnoreCase(String username, Pageable pageable);
 
+    @Query("SELECT u FROM User u ORDER BY u.lastActiveAt DESC NULLS LAST")
+    Page<User> findAllOrderByLastActiveAtDesc(Pageable pageable);
+
+    @Query("SELECT u FROM User u ORDER BY u.lastActiveAt ASC NULLS LAST")
+    Page<User> findAllOrderByLastActiveAtAsc(Pageable pageable);
+
+    @Query("SELECT u FROM User u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%')) ORDER BY u.lastActiveAt DESC NULLS LAST")
+    Page<User> findByUsernameOrderByLastActiveAtDesc(@Param("username") String username, Pageable pageable);
+
+    @Query("SELECT u FROM User u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%')) ORDER BY u.lastActiveAt ASC NULLS LAST")
+    Page<User> findByUsernameOrderByLastActiveAtAsc(@Param("username") String username, Pageable pageable);
+
     /**
      * Атомарный инкремент счётчика действий пользователя.
      * Вызывается из сервисов при создании новой записи активности.

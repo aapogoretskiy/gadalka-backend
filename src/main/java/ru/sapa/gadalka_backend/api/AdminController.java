@@ -98,11 +98,9 @@ public class AdminController {
         // Защита от произвольных имён полей
         String safeField = ALLOWED_SORT_FIELDS.contains(sortBy) ? sortBy : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        boolean sortByLastActive = "lastActiveAt".equals(safeField);
 
-        Sort sort = "lastActiveAt".equals(safeField)
-                ? Sort.by(Sort.Order.by(safeField).with(direction).nullsLast())
-                : Sort.by(direction, safeField);
-
+        Sort sort = sortByLastActive ? Sort.unsorted() : Sort.by(direction, safeField);
         PageRequest pageable = PageRequest.of(page, Math.min(size, 100), sort);
 
         Page<User> users;
@@ -115,10 +113,24 @@ public class AdminController {
                 users = new PageImpl<>(list, pageable, list.size());
             } catch (NumberFormatException e) {
                 // Иначе ищем по username
-                users = userRepository.findByUsernameContainingIgnoreCase(trimmed, pageable);
+                if (sortByLastActive) {
+                    PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
+                    users = direction == Sort.Direction.DESC
+                            ? userRepository.findByUsernameOrderByLastActiveAtDesc(trimmed, unsortedPageable)
+                            : userRepository.findByUsernameOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                } else {
+                    users = userRepository.findByUsernameContainingIgnoreCase(trimmed, pageable);
+                }
             }
         } else {
-            users = userRepository.findAll(pageable);
+            if (sortByLastActive) {
+                PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
+                users = direction == Sort.Direction.DESC
+                        ? userRepository.findAllOrderByLastActiveAtDesc(unsortedPageable)
+                        : userRepository.findAllOrderByLastActiveAtAsc(unsortedPageable);
+            } else {
+                users = userRepository.findAll(pageable);
+            }
         }
 
         return ResponseEntity.ok(users.map(this::toSummary));
