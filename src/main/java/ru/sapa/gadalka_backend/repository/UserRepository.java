@@ -46,4 +46,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /** Количество активных пользователей после указанной даты (по lastActiveAt) */
     long countByLastActiveAtAfter(OffsetDateTime from);
+
+    /** Количество новых пользователей за диапазон дат */
+    long countByCreatedAtBetween(OffsetDateTime from, OffsetDateTime to);
 }

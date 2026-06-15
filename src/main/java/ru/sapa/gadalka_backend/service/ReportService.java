@@ -21,8 +21,11 @@ import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.repository.UserVisitRepository;
 
+import ru.sapa.gadalka_backend.api.dto.admin.report.RangeReportDto;
+
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 /**
  * Агрегирует статистику для страницы отчётов в админ-панели.
@@ -158,6 +161,60 @@ public class ReportService {
                 userVisitRepository.countUsersWithMultipleVisits(minus1d),
                 userVisitRepository.countUsersWithMultipleVisits(minus7d),
                 userVisitRepository.countUsersWithMultipleVisits(minus30d)
+        );
+    }
+
+    // ── Отчёт за произвольный диапазон ──────────────────────────────────────
+
+    /**
+     * Собирает метрики за произвольный диапазон дат.
+     * Даты трактуются как начало и конец дня в московском часовом поясе (Europe/Moscow).
+     *
+     * @param fromDate начало диапазона (включительно)
+     * @param toDate   конец диапазона (включительно)
+     */
+    @Transactional(readOnly = true)
+    public RangeReportDto buildRangeReport(LocalDate fromDate, LocalDate toDate) {
+        ZoneId moscow = ZoneId.of("Europe/Moscow");
+
+        // from = начало дня по Москве, to = конец дня по Москве
+        OffsetDateTime from = fromDate.atStartOfDay(moscow).toOffsetDateTime();
+        OffsetDateTime to   = toDate.atTime(23, 59, 59).atZone(moscow).toOffsetDateTime();
+
+        // ── Новые пользователи ───────────────────────────────────────────────
+        long newUsers = userRepository.countByCreatedAtBetween(from, to);
+
+        // ── Гадания ──────────────────────────────────────────────────────────
+        long threeCard   = fortuneRepository.countByCreatedAtBetweenAndSpreadType(from, to, SpreadType.THREE_CARD)
+                         + fortuneRepository.countByCreatedAtBetweenAndSpreadTypeIsNull(from, to);
+        long horseshoe   = fortuneRepository.countByCreatedAtBetweenAndSpreadType(from, to, SpreadType.HORSESHOE);
+        long celticCross = fortuneRepository.countByCreatedAtBetweenAndSpreadType(from, to, SpreadType.CELTIC_CROSS);
+        long fortunesTotal = threeCard + horseshoe + celticCross;
+
+        // ── Совместимость ────────────────────────────────────────────────────
+        long compatibility = compatibilityReadingRepository.countByCreatedAtBetween(from, to);
+
+        // ── Действия (всё вместе) ─────────────────────────────────────────
+        long actionsTotal = fortunesTotal + compatibility;
+
+        // ── Повторные посещения ───────────────────────────────────────────────
+        long returningUsers = userVisitRepository.countUsersWithMultipleVisitsBetween(from, to);
+
+        // ── Платежи ──────────────────────────────────────────────────────────
+        long rubKopecks      = paymentRepository.sumSucceededRubBetween(from, to);
+        long rubTransactions = paymentRepository.countSucceededRubBetween(from, to);
+        long stars           = paymentRepository.sumSucceededStarsBetween(from, to);
+        long starsTransactions = paymentRepository.countSucceededStarsBetween(from, to);
+
+        return new RangeReportDto(
+                fromDate.toString(),
+                toDate.toString(),
+                newUsers,
+                new RangeReportDto.FortunesRangeDto(fortunesTotal, threeCard, horseshoe, celticCross),
+                compatibility,
+                new RangeReportDto.ActionsRangeDto(actionsTotal, compatibility, threeCard, horseshoe, celticCross),
+                returningUsers,
+                new RangeReportDto.PaymentsRangeDto(rubKopecks, rubTransactions, stars, starsTransactions)
         );
     }
 

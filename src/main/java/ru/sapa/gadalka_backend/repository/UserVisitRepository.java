@@ -23,4 +23,19 @@ public interface UserVisitRepository extends JpaRepository<UserVisit, Long> {
             ) sub
             """, nativeQuery = true)
     long countUsersWithMultipleVisits(OffsetDateTime from);
+
+    /**
+     * Количество пользователей с более чем одним посещением за диапазон дат.
+     * Используется в отчёте за произвольный диапазон.
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM (
+                SELECT user_id
+                FROM user_visits
+                WHERE visited_at >= :from AND visited_at <= :to
+                GROUP BY user_id
+                HAVING COUNT(id) > 1
+            ) sub
+            """, nativeQuery = true)
+    long countUsersWithMultipleVisitsBetween(OffsetDateTime from, OffsetDateTime to);
 }

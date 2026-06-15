@@ -37,6 +37,8 @@ import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -502,6 +504,38 @@ public class AdminController {
         Long adminId = (Long) request.getAttribute("adminTelegramId");
         log.info("Admin {} запросил отчёты", adminId);
         return ResponseEntity.ok(reportService.buildReport());
+    }
+
+    /**
+     * GET /api/admin/reports/range?from=YYYY-MM-DD&to=YYYY-MM-DD
+     *
+     * <p>Отчёт за произвольный диапазон дат (включительно).
+     * Даты трактуются в московском часовом поясе (Europe/Moscow).
+     * Параметр from не должен быть позже to.
+     */
+    @GetMapping("/reports/range")
+    public ResponseEntity<?> getRangeReport(
+            @RequestParam String from,
+            @RequestParam String to,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+
+        LocalDate fromDate;
+        LocalDate toDate;
+        try {
+            fromDate = LocalDate.parse(from);
+            toDate   = LocalDate.parse(to);
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Некорректный формат даты. Используйте YYYY-MM-DD"));
+        }
+
+        if (fromDate.isAfter(toDate)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Дата начала не может быть позже даты окончания"));
+        }
+
+        log.info("Admin {} запросил отчёт за диапазон: {} — {}", adminId, fromDate, toDate);
+        return ResponseEntity.ok(reportService.buildRangeReport(fromDate, toDate));
     }
 
     // ══════════════════════════════════════════════════════════

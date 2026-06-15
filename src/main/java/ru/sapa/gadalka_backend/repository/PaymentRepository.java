@@ -57,4 +57,22 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     /** Количество уникальных Stars-плательщиков */
     @Query("SELECT COUNT(DISTINCT p.userId) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR'")
     Long countStarsPayingUsers();
+
+    // ── Отчёты за диапазон ──────────────────────────────────────────────────
+
+    /** Выручка в рублях (копейки) за диапазон дат */
+    @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.createdAt >= :from AND p.createdAt <= :to")
+    Long sumSucceededRubBetween(OffsetDateTime from, OffsetDateTime to);
+
+    /** Количество успешных рублёвых транзакций за диапазон дат */
+    @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.createdAt >= :from AND p.createdAt <= :to")
+    Long countSucceededRubBetween(OffsetDateTime from, OffsetDateTime to);
+
+    /** Stars за диапазон дат */
+    @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from AND p.createdAt <= :to")
+    Long sumSucceededStarsBetween(OffsetDateTime from, OffsetDateTime to);
+
+    /** Количество успешных Stars-транзакций за диапазон дат */
+    @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from AND p.createdAt <= :to")
+    Long countSucceededStarsBetween(OffsetDateTime from, OffsetDateTime to);
 }

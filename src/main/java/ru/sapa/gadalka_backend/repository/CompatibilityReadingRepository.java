@@ -20,4 +20,7 @@ public interface CompatibilityReadingRepository extends JpaRepository<Compatibil
 
     // ── Отчёты ──────────────────────────────────────────────────────────────
     long countByCreatedAtAfter(OffsetDateTime from);
+
+    /** Количество расчётов совместимости за диапазон дат */
+    long countByCreatedAtBetween(OffsetDateTime from, OffsetDateTime to);
 }

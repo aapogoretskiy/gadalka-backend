@@ -33,4 +33,15 @@ public interface FortuneRepository extends JpaRepository<Fortune, Long> {
      * Старые записи (до введения SpreadType) считаются THREE_CARD.
      */
     long countByCreatedAtAfterAndSpreadTypeIsNull(OffsetDateTime from);
+
+    // ── Отчёты за диапазон ──────────────────────────────────────────────────
+
+    /** Количество гаданий за диапазон дат */
+    long countByCreatedAtBetween(OffsetDateTime from, OffsetDateTime to);
+
+    /** Количество гаданий конкретного типа за диапазон дат */
+    long countByCreatedAtBetweenAndSpreadType(OffsetDateTime from, OffsetDateTime to, SpreadType spreadType);
+
+    /** Количество гаданий без spreadType за диапазон дат (считаются THREE_CARD) */
+    long countByCreatedAtBetweenAndSpreadTypeIsNull(OffsetDateTime from, OffsetDateTime to);
 }
