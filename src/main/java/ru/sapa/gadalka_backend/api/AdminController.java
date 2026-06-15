@@ -11,6 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
@@ -189,6 +190,7 @@ public class AdminController {
      * нумерология, карта дня), отсортированных по дате убыванию.
      * Запрашивается только при раскрытии соответствующего раздела в панели.
      */
+    @Transactional(readOnly = true)
     @GetMapping("/users/{id}/actions")
     public ResponseEntity<?> getUserActions(
             @PathVariable Long id,
