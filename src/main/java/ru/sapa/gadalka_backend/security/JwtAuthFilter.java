@@ -11,10 +11,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.JwtService;
-
+import ru.sapa.gadalka_backend.repository.UserVisitRepository;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import  ru.sapa.gadalka_backend.domain.UserVisit;
 
 @Slf4j
 @Component
@@ -23,6 +24,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final UserVisitRepository userVisitRepository;
 
     /** Пути, не требующие авторизации */
     private static final String[] PUBLIC_PATHS = {
@@ -97,15 +99,30 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Обновляет время последней активности пользователя.
+     * Обновляет время последней активности пользователя и фиксирует посещение.
      * Не чаще раза в 5 минут — чтобы не делать лишний UPDATE на каждый запрос.
+     * При каждом новом "сеансе" (прошло > 5 минут):
+     *   — инкрементируется visit_count в users
+     *   — создаётся запись в user_visits для аналитики повторных визитов по датам
      */
     private void updateLastActiveAt(User user) {
         OffsetDateTime now = OffsetDateTime.now();
         if (user.getLastActiveAt() == null ||
                 user.getLastActiveAt().isBefore(now.minusMinutes(LAST_ACTIVE_UPDATE_INTERVAL_MINUTES))) {
             user.setLastActiveAt(now);
+            user.setVisitCount(user.getVisitCount() + 1);
             userRepository.save(user);
+
+            // Запись лога посещения для аналитики по периодам
+            try {
+                userVisitRepository.save(UserVisit.builder()
+                        .userId(user.getId())
+                        .visitedAt(now)
+                        .build());
+            } catch (Exception e) {
+                // Не критично — основная логика (JWT/сессия) не должна падать из-за аналитики
+                log.warn("Не удалось записать посещение: userId={}, error={}", user.getId(), e.getMessage());
+            }
         }
     }
 

@@ -13,7 +13,7 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TelegramUserDto {
 
     private Long id;
@@ -25,4 +25,7 @@ public class TelegramUserDto {
     private String lastName;
 
     private String username;
+
+    @JsonProperty("is_premium")
+    private boolean premium;
 }

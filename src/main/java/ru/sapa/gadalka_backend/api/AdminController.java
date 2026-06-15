@@ -11,22 +11,35 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
 import ru.sapa.gadalka_backend.api.dto.feedback.TicketDetailsResponse;
 import ru.sapa.gadalka_backend.api.dto.feedback.TicketSummaryResponse;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
+import ru.sapa.gadalka_backend.domain.CompatibilityReading;
+import ru.sapa.gadalka_backend.domain.DailyCard;
+import ru.sapa.gadalka_backend.domain.Fortune;
+import ru.sapa.gadalka_backend.domain.NumerologyDayReading;
 import ru.sapa.gadalka_backend.domain.SupportTicket;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
+import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
+import ru.sapa.gadalka_backend.repository.DailyCardRepository;
+import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
+import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
+
+import java.util.ArrayList;
+import java.util.Comparator;
 
 import java.util.List;
 import java.util.Map;
@@ -44,8 +57,13 @@ import java.util.Optional;
 public class AdminController {
 
     private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
     private final FortuneCreditService fortuneCreditService;
     private final FortuneCreditLogRepository creditLogRepository;
+    private final FortuneRepository fortuneRepository;
+    private final CompatibilityReadingRepository compatibilityReadingRepository;
+    private final NumerologyDayReadingRepository numerologyDayReadingRepository;
+    private final DailyCardRepository dailyCardRepository;
     private final GadalkaTelegramBot telegramBot;
     private final BroadcastService broadcastService;
     private final ReportService reportService;
@@ -137,6 +155,12 @@ public class AdminController {
             } catch (NumberFormatException ignored) { }
         }
 
+        // Дата рождения из профиля (для отображения возраста в панели)
+        var profileOpt = userProfileRepository.findByUserId(user.getId());
+        String birthDate = profileOpt.filter(p -> p.getBirthDate() != null)
+                .map(p -> p.getBirthDate().toString())
+                .orElse(StringUtils.EMPTY);
+
         return ResponseEntity.ok(Map.ofEntries(
                 Map.entry("id", user.getId()),
                 Map.entry("telegramId", user.getTelegramId()),
@@ -146,12 +170,102 @@ public class AdminController {
                 Map.entry("createdAt", user.getCreatedAt()),
                 Map.entry("lastActiveAt", user.getLastActiveAt() != null ? user.getLastActiveAt() : ""),
                 Map.entry("banned", user.isBanned()),
+                Map.entry("premium", user.isPremium()),
+                Map.entry("visitCount", user.getVisitCount()),
+                Map.entry("birthDate", birthDate),
                 Map.entry("referralSource", referralSource),
                 Map.entry("referrerName", referrerName),
                 Map.entry("balance", balance),
                 Map.entry("totalSpent", totalSpent),
                 Map.entry("totalGranted", totalGranted)
         ));
+    }
+
+    /**
+     * GET /api/admin/users/{id}/actions?limit=30
+     *
+     * <p>Lazy-загрузка истории действий пользователя.
+     * Возвращает последние N записей из всех таблиц активности (гадания, совместимость,
+     * нумерология, карта дня), отсортированных по дате убыванию.
+     * Запрашивается только при раскрытии соответствующего раздела в панели.
+     */
+    @GetMapping("/users/{id}/actions")
+    public ResponseEntity<?> getUserActions(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "30") int limit,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил историю действий userId={}, limit={}", adminId, id, limit);
+
+        if (userRepository.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        int safeLimit = Math.min(limit, 100);
+        PageRequest pageable = PageRequest.of(0, safeLimit);
+
+        var actions = new ArrayList<Map<String, Object>>();
+
+        // Гадания (расклады)
+        for (Fortune fortune : fortuneRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+            String type = fortune.getSpreadType() != null ? fortune.getSpreadType().name() : "THREE_CARD";
+            actions.add(Map.of(
+                    "type", "FORTUNE_" + type,
+                    "label", fortuneLabel(type),
+                    "date", fortune.getCreatedAt().toString(),
+                    "details", fortune.getQuestion().length() > 60
+                            ? fortune.getQuestion().substring(0, 60) + "…"
+                            : fortune.getQuestion()
+            ));
+        }
+
+        // Совместимость
+        for (CompatibilityReading cr : compatibilityReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+            actions.add(Map.of(
+                    "type", "COMPATIBILITY",
+                    "label", "Совместимость",
+                    "date", cr.getCreatedAt().toString(),
+                    "details", cr.getLabel() + " — " + cr.getScore() + "%"
+            ));
+        }
+
+        // Нумерология
+        for (NumerologyDayReading nr : numerologyDayReadingRepository.findByUserIdOrderByDateDesc(id, pageable)) {
+            actions.add(Map.of(
+                    "type", "NUMEROLOGY",
+                    "label", "Число дня",
+                    "date", nr.getDate().toString(),
+                    "details", "Код дня: " + nr.getDayCode()
+            ));
+        }
+
+        // Карта дня
+        for (DailyCard dc : dailyCardRepository.findByUserIdOrderByDateDesc(id, pageable)) {
+            String cardName = dc.getCard() != null ? dc.getCard().getName() : "—";
+            actions.add(Map.of(
+                    "type", "DAILY_CARD",
+                    "label", "Карта дня",
+                    "date", dc.getDate().toString(),
+                    "details", cardName
+            ));
+        }
+
+        // Сортируем общий список по дате убыванию и обрезаем до limit
+        actions.sort(Comparator.comparing(a -> (String) a.get("date"), Comparator.reverseOrder()));
+        var result = actions.size() > safeLimit ? actions.subList(0, safeLimit) : actions;
+
+        return ResponseEntity.ok(result);
+    }
+
+    /** Человекочитаемая метка типа расклада */
+    private String fortuneLabel(String spreadType) {
+        return switch (spreadType) {
+            case "THREE_CARD"   -> "Расклад 3 карты";
+            case "HORSESHOE"    -> "Подкова";
+            case "CELTIC_CROSS" -> "Кельтский крест";
+            default -> "Расклад";
+        };
     }
 
     /**
@@ -238,7 +352,7 @@ public class AdminController {
         boolean toAll = body.userIds() == null || body.userIds().isEmpty();
         log.info("Admin {} запустил рассылку: toAll={}, giftAmount={}, recipients={}", adminId, toAll, body.giftAmount(), toAll ? "all" : body.userIds().size());
 
-        broadcastService.broadcast(body.message(), body.giftAmount(), body.userIds());
+        broadcastService.broadcast(body.message(), body.giftAmount(), body.userIds(), body.photoUrl());
 
         String info = toAll ? "всем пользователям" : "выбранным (" + body.userIds().size() + ")";
         return ResponseEntity.ok(Map.of("message", "Рассылка запущена " + info));
@@ -273,8 +387,11 @@ public class AdminController {
         return ResponseEntity.ok(referralStatsService.getInvitedUsers(id));
     }
 
-    /** DTO для запроса рассылки */
-    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds) {}
+    /**
+     * DTO для запроса рассылки.
+     * photoUrl — опциональный URL изображения; если задан, отправляется SendPhoto вместо SendMessage.
+     */
+    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, String photoUrl) {}
 
     /**
      * GET /api/admin/reports
@@ -283,7 +400,7 @@ public class AdminController {
      * пользователи (DAU/WAU/новые), гадания, платежи (RUB + Stars раздельно), знаки.
      */
     @GetMapping("/reports")
-    public ResponseEntity<?> getReports(HttpServletRequest request) {
+    public ResponseEntity<AdminReportDto> getReports(HttpServletRequest request) {
         Long adminId = (Long) request.getAttribute("adminTelegramId");
         log.info("Admin {} запросил отчёты", adminId);
         return ResponseEntity.ok(reportService.buildReport());
@@ -379,7 +496,9 @@ public class AdminController {
                 "firstName", user.getFirstName() != null ? user.getFirstName() : "",
                 "createdAt", user.getCreatedAt(),
                 "lastActiveAt", user.getLastActiveAt() != null ? user.getLastActiveAt() : "",
-                "banned", user.isBanned()
+                "banned", user.isBanned(),
+                "premium", user.isPremium(),
+                "visitCount", user.getVisitCount()
         );
     }
 }

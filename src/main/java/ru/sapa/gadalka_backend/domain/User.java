@@ -42,7 +42,7 @@ public class User {
      * Проставляется один раз при создании аккаунта, если пользователь пришёл по реферальной ссылке.
      * Например: "telegram_channel1", "tiktok_video1".
      */
-    @Column(name = "referral_source", length = 255)
+    @Column(name = "referral_source")
     private String referralSource;
 
     @Column(name = "active_theme_id")
@@ -78,6 +78,22 @@ public class User {
      */
     @Column(name = "last_active_at")
     private OffsetDateTime lastActiveAt;
+
+    /**
+     * Признак наличия подписки Telegram Premium у пользователя.
+     * Передаётся Telegram в поле initData.user.is_premium при открытии Mini App.
+     * Обновляется при каждой аутентификации — отражает актуальное состояние подписки.
+     */
+    @Column(name = "is_premium", nullable = false)
+    private boolean premium;
+
+    /**
+     * Количество посещений (сеансов) пользователя в приложении.
+     * Инкрементируется синхронно с обновлением lastActiveAt (не чаще раза в 5 минут).
+     * Каждый "сеанс" также записывается в таблицу user_visits для аналитики по периодам.
+     */
+    @Column(name = "visit_count", nullable = false)
+    private int visitCount;
 
     @PrePersist
     void prePersist() {

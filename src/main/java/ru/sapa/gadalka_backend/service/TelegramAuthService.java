@@ -17,10 +17,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -70,12 +67,41 @@ public class TelegramAuthService {
                                     .username(telegramUser.getUsername())
                                     .firstName(telegramUser.getFirstName())
                                     .lastName(telegramUser.getLastName())
+                                    .premium(telegramUser.isPremium())
                                     .build()
                     ));
 
+            // Обновляем актуальные данные профиля при каждом логине
+            // (имя/username/premium могут измениться в Telegram)
+            if (!isNewUser) {
+                boolean changed = false;
+                if (!Objects.equals(user.getUsername(), telegramUser.getUsername())) {
+                    user.setUsername(telegramUser.getUsername());
+                    changed = true;
+                }
+                if (!Objects.equals(user.getFirstName(), telegramUser.getFirstName())) {
+                    user.setFirstName(telegramUser.getFirstName());
+                    changed = true;
+                }
+                if (!Objects.equals(user.getLastName(), telegramUser.getLastName())) {
+                    user.setLastName(telegramUser.getLastName());
+                    changed = true;
+                }
+                if (user.isPremium() != telegramUser.isPremium()) {
+                    user.setPremium(telegramUser.isPremium());
+                    changed = true;
+                }
+                if (changed) {
+                    userRepository.save(user);
+                }
+            }
+
             if (isNewUser) {
-                log.info("Зарегистрирован новый пользователь: id={}, telegramId={}, username={}",
-                        user.getId(), user.getTelegramId(), user.getUsername());
+                log.info("Зарегистрирован новый пользователь: id={}, telegramId={}, username={}, premium={}",
+                        user.getId(),
+                        user.getTelegramId(),
+                        user.getUsername(),
+                        telegramUser.isPremium());
                 fortuneCreditService.grantCredits(user.getId(), 5, CreditTransactionReason.FREE_GRANT, null);
                 log.info("Начислено 5 приветственных знаков: userId={}", user.getId());
             } else {

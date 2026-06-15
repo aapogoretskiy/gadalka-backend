@@ -10,6 +10,8 @@ import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateC
 import org.telegram.telegrambots.meta.api.methods.AnswerPreCheckoutQuery;
 import org.telegram.telegrambots.meta.api.methods.menubutton.SetChatMenuButton;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.menubutton.MenuButtonWebApp;
 import org.telegram.telegrambots.meta.api.objects.payments.PreCheckoutQuery;
@@ -278,6 +280,47 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
+     * Отправляет фото с подписью (caption) в рамках массовой рассылки.
+     * Используется когда в рассылке задан photoUrl.
+     * Если photoUrl невалиден или Telegram отклоняет запрос — бросаем исключение
+     * (BroadcastService посчитает как failed-отправку).
+     *
+     * @param telegramId Telegram ID получателя
+     * @param photoUrl   URL публично доступного изображения
+     * @param caption    подпись под фото (поддерживает Markdown)
+     * @param giftAmount количество начисленных знаков (null — не упоминать)
+     */
+    public void sendPhotoBroadcastMessage(Long telegramId, String photoUrl, String caption, Integer giftAmount) {
+        String fullCaption = caption;
+        if (giftAmount != null && giftAmount > 0) {
+            fullCaption += "\n\n🎁 На ваш счёт зачислено *" + giftAmount + " " + pluralZnaki(giftAmount) + "*";
+        }
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Открыть Гадалку")
+                .webApp(new WebAppInfo(appUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendPhoto photo = SendPhoto.builder()
+                .chatId(telegramId)
+                .photo(new InputFile(photoUrl))
+                .caption(fullCaption)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(photo);
+        } catch (TelegramApiException e) {
+            throw new RuntimeException("Telegram API photo error for telegramId=" + telegramId + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Отправляет уведомление пользователю при закрытии заявки обратной связи с подарком знаков.
      *
      * @param telegramId Telegram ID получателя
@@ -351,9 +394,12 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
 
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
-                .text("✨ *Добро пожаловать в Гадалку!*\n\n" +
-                      "Здесь карты Таро раскроют тайны вашего прошлого, настоящего и будущего.\n\n" +
-                      "Нажмите кнопку ниже, чтобы открыть приложение и получить свой персональный расклад 🌙")
+                .text("""
+                        ✨ *Добро пожаловать в Гадалку!*
+                        
+                        Здесь карты Таро раскроют тайны вашего прошлого, настоящего и будущего.
+                        
+                        Нажмите кнопку ниже, чтобы открыть приложение и получить свой персональный расклад 🌙""")
                 .parseMode("Markdown")
                 .replyMarkup(keyboard)
                 .build();
