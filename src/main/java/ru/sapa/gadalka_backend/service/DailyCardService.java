@@ -11,6 +11,7 @@ import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.DailyCardRepository;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.time.LocalDate;
 
@@ -21,6 +22,7 @@ public class DailyCardService {
     private final CardMapper cardMapper;
     private final DailyCardRepository dailyCardRepository;
     private final CardRepository cardRepository;
+    private final UserRepository userRepository;
     private final DiaryService diaryService;
     private final ThemeService themeService;
 
@@ -44,6 +46,7 @@ public class DailyCardService {
                 .build();
 
         dailyCardRepository.save(dailyCard);
+        userRepository.incrementActionsCount(userId);
         CardDeckTheme activeTheme = themeService.resolveActiveTheme(userId);
         DailyCardResponse response = cardMapper.toDailyCardDto(dailyCard, activeTheme);
         diaryService.save(userId, DiaryFeatureType.DAILY_CARD, dailyCard.getId(), response);

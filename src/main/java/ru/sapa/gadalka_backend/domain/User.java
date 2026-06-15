@@ -95,6 +95,15 @@ public class User {
     @Column(name = "visit_count", nullable = false)
     private int visitCount;
 
+    /**
+     * Суммарное количество действий пользователя:
+     * гадания + расклады совместимости + нумерология дня + карта дня.
+     * Инкрементируется в сервисах при создании новой записи (не при отдаче из кэша).
+     * Используется в админ-панели для оценки активности и сортировки.
+     */
+    @Column(name = "total_actions_count", nullable = false)
+    private int totalActionsCount;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

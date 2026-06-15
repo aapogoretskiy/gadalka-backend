@@ -37,10 +37,10 @@ import ru.sapa.gadalka_backend.service.SupportTicketService;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Административные операции над пользователями.
@@ -52,6 +52,10 @@ import java.util.Optional;
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
 public class AdminController {
+
+    private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
+            "createdAt", "lastActiveAt", "username", "firstName", "visitCount", "totalActionsCount"
+    );
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
@@ -79,12 +83,27 @@ public class AdminController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
             HttpServletRequest request) {
 
         Long adminId = (Long) request.getAttribute("adminTelegramId");
-        log.info("Admin {} запросил список пользователей: page={}, search={}", adminId, page, search);
+        log.info("Admin {} запросил список пользователей: page={}, search={}, sortBy={}, sortDir={}",
+                adminId,
+                page,
+                search,
+                sortBy,
+                sortDir);
 
-        PageRequest pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+        // Защита от произвольных имён полей
+        String safeField = ALLOWED_SORT_FIELDS.contains(sortBy) ? sortBy : "createdAt";
+        Sort.Direction direction = "asc".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC;
+
+        Sort sort = "lastActiveAt".equals(safeField)
+                ? Sort.by(Sort.Order.by(safeField).with(direction).nullsLast())
+                : Sort.by(direction, safeField);
+
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 100), sort);
 
         Page<User> users;
         if (search != null && !search.isBlank()) {
@@ -523,7 +542,8 @@ public class AdminController {
                 "lastActiveAt", user.getLastActiveAt() != null ? user.getLastActiveAt() : "",
                 "banned", user.isBanned(),
                 "premium", user.isPremium(),
-                "visitCount", user.getVisitCount()
+                "visitCount", user.getVisitCount(),
+                "totalActionsCount", user.getTotalActionsCount()
         );
     }
 }

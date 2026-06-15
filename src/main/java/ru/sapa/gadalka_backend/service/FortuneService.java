@@ -18,6 +18,7 @@ import ru.sapa.gadalka_backend.domain.type.SpreadType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
@@ -38,6 +39,7 @@ public class FortuneService {
     private final SpreadService spreadService;
     private final CardRepository cardRepository;
     private final FortuneRepository fortuneRepository;
+    private final UserRepository userRepository;
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
@@ -97,7 +99,9 @@ public class FortuneService {
                     .cards(cardsJson)
                     .interpretation(interpretation)
                     .build();
-            return fortuneRepository.save(fortune);
+            Fortune saved = fortuneRepository.save(fortune);
+            userRepository.incrementActionsCount(userId);
+            return saved;
         } catch (JsonProcessingException e) {
             log.error("Ошибка сериализации карт при сохранении гадания, userId={}: {}", userId, e.getMessage(), e);
             throw new IllegalStateException("Ошибка сохранения гадания", e);

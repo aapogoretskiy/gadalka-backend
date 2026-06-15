@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
@@ -13,6 +14,7 @@ import ru.sapa.gadalka_backend.domain.CompatibilityReading;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 
 import java.nio.charset.StandardCharsets;
@@ -36,6 +38,7 @@ public class CompatibilityService {
 
     private final NumerologyService numerologyService;
     private final CompatibilityReadingRepository compatibilityReadingRepository;
+    private final UserRepository userRepository;
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
@@ -47,6 +50,7 @@ public class CompatibilityService {
      * AI-интерпретация генерируется и сохраняется сразу (чтобы unlock был мгновенным),
      * но в ответ не включается пока пользователь не оплатит.
      */
+    @Transactional
     public CompatibilityResponse getCompatibility(User user, List<CompatibilityRequest.PersonInput> persons) {
         String personsHash = hashPersons(user.getId(), persons);
 
@@ -70,6 +74,7 @@ public class CompatibilityService {
         CompatibilityReading saved = saveReading(user.getId(), personsHash, persons,
                 numerology.getOverallScore(), label, numerology.getCategories(), interpretation);
         log.info("Расклад совместимости сохранён: readingId={}, userId={}, балл={}", saved.getId(), user.getId(), numerology.getOverallScore());
+        userRepository.incrementActionsCount(user.getId());
 
         // Сохраняем в дневник (без полного анализа — он появится после разблокировки)
         CompatibilityResponse previewResponse = buildResponse(saved, persons);

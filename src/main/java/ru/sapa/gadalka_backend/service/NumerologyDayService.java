@@ -14,6 +14,7 @@ import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.time.LocalDate;
 
@@ -26,6 +27,7 @@ public class NumerologyDayService {
     private final NumerologyContentService contentService;
     private final NumerologyDayReadingRepository repository;
     private final UserProfileRepository userProfileRepository;
+    private final UserRepository userRepository;
     private final DiaryService diaryService;
     private final ObjectMapper objectMapper;
 
@@ -91,6 +93,7 @@ public class NumerologyDayService {
                 .build();
 
         repository.save(reading);
+        userRepository.incrementActionsCount(userId);
 
         diaryService.save(userId, DiaryFeatureType.NUMEROLOGY_DAY, reading.getId(), response);
 
