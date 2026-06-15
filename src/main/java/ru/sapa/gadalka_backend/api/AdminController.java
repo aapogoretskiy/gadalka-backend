@@ -37,7 +37,7 @@ import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -521,13 +521,13 @@ public class AdminController {
 
         Long adminId = (Long) request.getAttribute("adminTelegramId");
 
-        LocalDate fromDate;
-        LocalDate toDate;
+        LocalDateTime fromDate;
+        LocalDateTime toDate;
         try {
-            fromDate = LocalDate.parse(from);
-            toDate   = LocalDate.parse(to);
+            fromDate = LocalDateTime.parse(from);
+            toDate   = LocalDateTime.parse(to);
         } catch (DateTimeParseException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Некорректный формат даты. Используйте YYYY-MM-DD"));
+            return ResponseEntity.badRequest().body(Map.of("message", "Некорректный формат даты. Используйте YYYY-MM-DDTHH:mm:ss"));
         }
 
         if (fromDate.isAfter(toDate)) {

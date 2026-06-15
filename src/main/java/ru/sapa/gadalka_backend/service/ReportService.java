@@ -24,6 +24,7 @@ import ru.sapa.gadalka_backend.repository.UserVisitRepository;
 import ru.sapa.gadalka_backend.api.dto.admin.report.RangeReportDto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
@@ -174,12 +175,12 @@ public class ReportService {
      * @param toDate   конец диапазона (включительно)
      */
     @Transactional(readOnly = true)
-    public RangeReportDto buildRangeReport(LocalDate fromDate, LocalDate toDate) {
+    public RangeReportDto buildRangeReport(LocalDateTime fromDate, LocalDateTime toDate) {
         ZoneId moscow = ZoneId.of("Europe/Moscow");
 
-        // from = начало дня по Москве, to = конец дня по Москве
-        OffsetDateTime from = fromDate.atStartOfDay(moscow).toOffsetDateTime();
-        OffsetDateTime to   = toDate.atTime(23, 59, 59).atZone(moscow).toOffsetDateTime();
+        // Трактуем введённое пользователем время как московское и конвертируем в OffsetDateTime
+        OffsetDateTime from = fromDate.atZone(moscow).toOffsetDateTime();
+        OffsetDateTime to   = toDate.atZone(moscow).toOffsetDateTime();
 
         // ── Новые пользователи ───────────────────────────────────────────────
         long newUsers = userRepository.countByCreatedAtBetween(from, to);
@@ -207,8 +208,8 @@ public class ReportService {
         long starsTransactions = paymentRepository.countSucceededStarsBetween(from, to);
 
         return new RangeReportDto(
-                fromDate.toString(),
-                toDate.toString(),
+                from.toString(),
+                to.toString(),
                 newUsers,
                 new RangeReportDto.FortunesRangeDto(fortunesTotal, threeCard, horseshoe, celticCross),
                 compatibility,
