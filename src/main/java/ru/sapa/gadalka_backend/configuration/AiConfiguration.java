@@ -20,4 +20,14 @@ public class AiConfiguration {
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_VALUE)
                 .build();
     }
+
+    @Bean
+    public WebClient aiTunnelWebClient(@Value("${aitunnel.url}") String url,
+                                       @Value("${aitunnel.api-key}") String apiKey) {
+        return WebClient.builder()
+                .baseUrl(url)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_VALUE)
+                .build();
+    }
 }

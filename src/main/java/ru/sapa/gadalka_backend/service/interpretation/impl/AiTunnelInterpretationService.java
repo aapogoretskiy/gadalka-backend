@@ -6,19 +6,19 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
-@Service("openrouter")
+@Service("aitunnel")
 @RequiredArgsConstructor
-public class OpenAiInterpretationService extends OpenAiCompatibleInterpretationService {
+public class AiTunnelInterpretationService extends OpenAiCompatibleInterpretationService {
 
-    @Qualifier("openRouterWebClient")
-    private final WebClient openRouterWebClient;
+    @Qualifier("aiTunnelWebClient")
+    private final WebClient aiTunnelWebClient;
 
-    @Value("${openrouter.model}")
+    @Value("${aitunnel.model}")
     private String aiModel;
 
     @Override
     protected WebClient getClient() {
-        return openRouterWebClient;
+        return aiTunnelWebClient;
     }
 
     @Override
@@ -28,6 +28,6 @@ public class OpenAiInterpretationService extends OpenAiCompatibleInterpretationS
 
     @Override
     public String getProvider() {
-        return "openrouter";
+        return "aitunnel";
     }
 }
