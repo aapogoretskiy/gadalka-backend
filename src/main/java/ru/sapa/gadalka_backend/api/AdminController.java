@@ -339,7 +339,19 @@ public class AdminController {
         }
 
         // ── Расклад на неделю ────────────────────────────────────────────────
-        for (NumerologyWeekReading nwr : numerologyWeekReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+        List<NumerologyWeekReading> weekReadings = numerologyWeekReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable);
+        List<Long> weekReadingIds = weekReadings
+                .stream()
+                .map(NumerologyWeekReading::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, ActionFeedback> weekFeedbacks = actionFeedbackRepository
+                .findByActionTypeAndActionIdIn(FeedbackTargetType.NUMEROLOGY_WEEK, weekReadingIds)
+                .stream()
+                .collect(Collectors.toMap(ActionFeedback::getActionId, fb -> fb));
+
+        for (NumerologyWeekReading nwr : weekReadings) {
+            ActionFeedback fb = weekFeedbacks.get(nwr.getId());
             var item = new java.util.LinkedHashMap<String, Object>();
             item.put("id",             nwr.getId());
             item.put("type",           "NUMEROLOGY_WEEK");
@@ -347,8 +359,8 @@ public class AdminController {
             item.put("date",           nwr.getCreatedAt().toString());
             item.put("details",        "Число недели: " + nwr.getWeekNumber());
             item.put("interpretation", null);
-            item.put("feedbackRating", null);
-            item.put("feedbackComment", null);
+            item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
+            item.put("feedbackComment", fb != null ? fb.getComment() : null);
             actions.add(item);
         }
 
