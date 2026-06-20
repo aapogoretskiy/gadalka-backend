@@ -76,6 +76,38 @@ public class NumerologyContentService {
         return node != null ? node.asText() : "";
     }
 
+    // ── Контент недельного расклада (по числу недели) ──────────────────────────
+
+    public String weekMainTheme(int weekNumber) {
+        return textOrNull(numberNode(weekNumber), "weekMainTheme");
+    }
+
+    public String weekWhatToStrengthen(int weekNumber) {
+        return textOrNull(numberNode(weekNumber), "weekWhatToStrengthen");
+    }
+
+    public String weekWhatToAvoid(int weekNumber) {
+        return textOrNull(numberNode(weekNumber), "weekWhatToAvoid");
+    }
+
+    public String weekRelationships(int weekNumber) {
+        return textOrNull(numberNode(weekNumber), "weekRelationships");
+    }
+
+    public String weekFinance(int weekNumber) {
+        return textOrNull(numberNode(weekNumber), "weekFinance");
+    }
+
+    /** Короткая фраза-совет для пикового дня недели (по коду конкретного дня). */
+    public String peakAdvice(int dayCode) {
+        return textOrNull(numberNode(dayCode), "peakAdvice");
+    }
+
+    private String textOrNull(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value != null ? value.asText() : null;
+    }
+
     private JsonNode numberNode(int dayCode) {
         JsonNode node = numbersNode.get(String.valueOf(dayCode));
         if (node == null) {

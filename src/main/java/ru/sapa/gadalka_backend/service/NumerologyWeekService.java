@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekDayDto;
+import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekPeakDayDto;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
 import ru.sapa.gadalka_backend.domain.NumerologyWeekReading;
 import ru.sapa.gadalka_backend.domain.UserProfile;
@@ -21,6 +22,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Платный недельный нумерологический расклад.
@@ -57,6 +59,19 @@ public class NumerologyWeekService {
                 .orElseGet(() -> createAndSave(userId, today));
     }
 
+    /**
+     * Тихая проверка наличия уже оплаченного расклада на текущую неделю — НЕ создаёт новый
+     * расклад и НЕ списывает знаки. Используется фронтом при открытии экрана, чтобы понять,
+     * показывать ли сразу готовый результат или пейволл.
+     */
+    @Transactional
+    public Optional<NumerologyWeekResponse> peekWeek(Long userId) {
+        LocalDate today = LocalDate.now();
+
+        return repository.findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqual(userId, today, today)
+                .map(this::toResponse);
+    }
+
     private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -89,6 +104,23 @@ public class NumerologyWeekService {
         String weekDescription = contentService.energyOfDay(weekNumber);
         String weeklyAffirmation = contentService.randomAffirmation(weekNumber);
 
+        // Три пиковых дня недели — топ-3 по резонансу, с коротким советом по коду конкретного дня
+        List<NumerologyWeekPeakDayDto> peakDays = days.stream()
+                .sorted(Comparator.comparingInt(NumerologyWeekDayDto::resonanceScore).reversed())
+                .limit(3)
+                .map(d -> new NumerologyWeekPeakDayDto(
+                        d.date(),
+                        d.dayOfWeek(),
+                        d.dayCodeTitle(),
+                        contentService.peakAdvice(d.dayCode())))
+                .toList();
+
+        String mainTheme = contentService.weekMainTheme(weekNumber);
+        String whatToStrengthen = contentService.weekWhatToStrengthen(weekNumber);
+        String whatToAvoidWeek = contentService.weekWhatToAvoid(weekNumber);
+        String relationships = contentService.weekRelationships(weekNumber);
+        String finance = contentService.weekFinance(weekNumber);
+
         int weekCost = featureCostService.getNumerologyWeekCost();
         fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_WEEK, weekCost);
 
@@ -102,7 +134,13 @@ public class NumerologyWeekService {
                 days,
                 bestDay,
                 challengingDay,
-                weeklyAffirmation
+                weeklyAffirmation,
+                mainTheme,
+                peakDays,
+                whatToStrengthen,
+                whatToAvoidWeek,
+                relationships,
+                finance
         );
 
         String payload = serialize(response);
@@ -171,7 +209,13 @@ public class NumerologyWeekService {
                     stored.days(),
                     stored.bestDay(),
                     stored.challengingDay(),
-                    stored.weeklyAffirmation()
+                    stored.weeklyAffirmation(),
+                    stored.mainTheme(),
+                    stored.peakDays(),
+                    stored.whatToStrengthen(),
+                    stored.whatToAvoid(),
+                    stored.relationships(),
+                    stored.finance()
             );
         } catch (JsonProcessingException e) {
             log.error("Failed to deserialize NumerologyWeekReading payload id={}", reading.getId(), e);

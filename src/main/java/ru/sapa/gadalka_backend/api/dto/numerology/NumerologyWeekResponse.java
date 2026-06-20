@@ -13,6 +13,12 @@ public record NumerologyWeekResponse(
         List<NumerologyWeekDayDto> days,
         NumerologyWeekDayDto bestDay,
         NumerologyWeekDayDto challengingDay,
-        String weeklyAffirmation
+        String weeklyAffirmation,
+        String mainTheme,
+        List<NumerologyWeekPeakDayDto> peakDays,
+        String whatToStrengthen,
+        String whatToAvoid,
+        String relationships,
+        String finance
 ) {
 }
