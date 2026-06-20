@@ -16,6 +16,7 @@ import ru.sapa.gadalka_backend.domain.DailyCard;
 import ru.sapa.gadalka_backend.domain.DiaryEntry;
 import ru.sapa.gadalka_backend.domain.Fortune;
 import ru.sapa.gadalka_backend.domain.NumerologyDayReading;
+import ru.sapa.gadalka_backend.domain.NumerologyWeekReading;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
@@ -24,6 +25,7 @@ import ru.sapa.gadalka_backend.repository.DailyCardRepository;
 import ru.sapa.gadalka_backend.repository.DiaryRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -42,6 +44,7 @@ public class DiaryService {
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final DailyCardRepository dailyCardRepository;
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
+    private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
     private final CardMapper cardMapper;
     private final ObjectMapper objectMapper;
 
@@ -131,6 +134,7 @@ public class DiaryService {
             case COMPATIBILITY   -> resolveCompatibilityPayload(user.getId(), referenceId);
             case DAILY_CARD      -> resolveDailyCardPayload(user.getId(), referenceId);
             case NUMEROLOGY_DAY  -> resolveNumerologyDayPayload(user.getId(), referenceId);
+            case NUMEROLOGY_WEEK -> resolveNumerologyWeekPayload(user.getId(), referenceId);
         };
     }
 
@@ -178,6 +182,12 @@ public class DiaryService {
     private JsonNode resolveNumerologyDayPayload(Long userId, Long referenceId) {
         NumerologyDayReading reading = numerologyDayReadingRepository.findByIdAndUserId(referenceId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Нумерологический расчёт не найден"));
+        return parsePayload(reading.getPayload());
+    }
+
+    private JsonNode resolveNumerologyWeekPayload(Long userId, Long referenceId) {
+        NumerologyWeekReading reading = numerologyWeekReadingRepository.findByIdAndUserId(referenceId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Расклад на неделю не найден"));
         return parsePayload(reading.getPayload());
     }
 

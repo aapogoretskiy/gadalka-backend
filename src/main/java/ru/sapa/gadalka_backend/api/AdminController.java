@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
@@ -29,9 +30,11 @@ import ru.sapa.gadalka_backend.repository.DailyCardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.BroadcastService;
+import ru.sapa.gadalka_backend.service.FeatureCostService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
@@ -59,7 +62,7 @@ import java.util.stream.Collectors;
 public class AdminController {
 
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
-            "createdAt", "lastActiveAt", "username", "firstName", "visitCount", "totalActionsCount"
+            "createdAt", "lastActiveAt", "username", "firstName", "visitCount", "totalActionsCount", "totalSpent"
     );
 
     private final UserRepository userRepository;
@@ -69,6 +72,7 @@ public class AdminController {
     private final FortuneRepository fortuneRepository;
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
+    private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
     private final DailyCardRepository dailyCardRepository;
     private final ActionFeedbackRepository actionFeedbackRepository;
     private final GadalkaTelegramBot telegramBot;
@@ -76,6 +80,7 @@ public class AdminController {
     private final ReportService reportService;
     private final ReferralStatsService referralStatsService;
     private final SupportTicketService supportTicketService;
+    private final FeatureCostService featureCostService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -105,8 +110,12 @@ public class AdminController {
         String safeField = ALLOWED_SORT_FIELDS.contains(sortBy) ? sortBy : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC;
         boolean sortByLastActive = "lastActiveAt".equals(safeField);
+        // totalSpent — агрегат из fortune_credit_log, не колонка User, поэтому сортируется
+        // отдельным native-запросом (как и lastActiveAt), а не через Sort.by(...)
+        boolean sortByTotalSpent = "totalSpent".equals(safeField);
+        boolean customSort = sortByLastActive || sortByTotalSpent;
 
-        Sort sort = sortByLastActive ? Sort.unsorted() : Sort.by(direction, safeField);
+        Sort sort = customSort ? Sort.unsorted() : Sort.by(direction, safeField);
         PageRequest pageable = PageRequest.of(page, Math.min(size, 100), sort);
 
         Page<User> users;
@@ -124,6 +133,11 @@ public class AdminController {
                     users = direction == Sort.Direction.DESC
                             ? userRepository.findByUsernameOrderByLastActiveAtDesc(trimmed, unsortedPageable)
                             : userRepository.findByUsernameOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                } else if (sortByTotalSpent) {
+                    PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
+                    users = direction == Sort.Direction.DESC
+                            ? userRepository.findByUsernameOrderByTotalSpentDesc(trimmed, unsortedPageable)
+                            : userRepository.findByUsernameOrderByTotalSpentAsc(trimmed, unsortedPageable);
                 } else {
                     users = userRepository.findByUsernameContainingIgnoreCase(trimmed, pageable);
                 }
@@ -134,12 +148,24 @@ public class AdminController {
                 users = direction == Sort.Direction.DESC
                         ? userRepository.findAllOrderByLastActiveAtDesc(unsortedPageable)
                         : userRepository.findAllOrderByLastActiveAtAsc(unsortedPageable);
+            } else if (sortByTotalSpent) {
+                PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
+                users = direction == Sort.Direction.DESC
+                        ? userRepository.findAllOrderByTotalSpentDesc(unsortedPageable)
+                        : userRepository.findAllOrderByTotalSpentAsc(unsortedPageable);
             } else {
                 users = userRepository.findAll(pageable);
             }
         }
 
-        return ResponseEntity.ok(users.map(this::toSummary));
+        // Батч-подсчёт потраченных знаков для пользователей текущей страницы —
+        // один запрос вместо N, независимо от того, по какому полю сортируем.
+        List<Long> userIds = users.getContent().stream().map(User::getId).collect(Collectors.toList());
+        Map<Long, Long> spentByUserId = creditLogRepository.sumSpentByUserIds(userIds).stream()
+                .collect(Collectors.toMap(FortuneCreditLogRepository.UserSpentRow::getUserId,
+                        FortuneCreditLogRepository.UserSpentRow::getSpent));
+
+        return ResponseEntity.ok(users.map(user -> toSummary(user, spentByUserId.getOrDefault(user.getId(), 0L))));
     }
 
     /**
@@ -307,6 +333,20 @@ public class AdminController {
             item.put("date",           nr.getDate().toString());
             item.put("details",        "Код дня: " + nr.getDayCode());
             item.put("interpretation", nr.getAffirmation());
+            item.put("feedbackRating", null);
+            item.put("feedbackComment", null);
+            actions.add(item);
+        }
+
+        // ── Расклад на неделю ────────────────────────────────────────────────
+        for (NumerologyWeekReading nwr : numerologyWeekReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             nwr.getId());
+            item.put("type",           "NUMEROLOGY_WEEK");
+            item.put("label",          "Расклад на неделю");
+            item.put("date",           nwr.getCreatedAt().toString());
+            item.put("details",        "Число недели: " + nwr.getWeekNumber());
+            item.put("interpretation", null);
             item.put("feedbackRating", null);
             item.put("feedbackComment", null);
             actions.add(item);
@@ -539,6 +579,43 @@ public class AdminController {
     }
 
     // ══════════════════════════════════════════════════════════
+    //  СТОИМОСТЬ ПЛАТНЫХ ФУНКЦИЙ
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * GET /api/admin/feature-costs
+     *
+     * <p>Текущая стоимость платных функций в знаках (читается из system_config).
+     */
+    @GetMapping("/feature-costs")
+    public ResponseEntity<FeatureCostsDto> getFeatureCosts(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил текущие цены платных функций", adminId);
+        return ResponseEntity.ok(featureCostService.getAllCosts());
+    }
+
+    /**
+     * PUT /api/admin/feature-costs
+     * Body: { "threeCard": 3, "horseshoe": 6, "celticCross": 9, "compatibilityUnlock": 3, "numerologyWeek": 3 }
+     *
+     * <p>Обновляет стоимость всех платных функций сразу. Изменения вступают в силу немедленно
+     * (без деплоя) — следующее списание знаков будет по новой цене.
+     */
+    @PutMapping("/feature-costs")
+    public ResponseEntity<?> updateFeatureCosts(@RequestBody FeatureCostsDto body, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} обновляет цены платных функций: {}", adminId, body);
+
+        try {
+            featureCostService.updateCosts(body);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+
+        return ResponseEntity.ok(featureCostService.getAllCosts());
+    }
+
+    // ══════════════════════════════════════════════════════════
     //  SUPPORT TICKETS
     // ══════════════════════════════════════════════════════════
 
@@ -619,19 +696,31 @@ public class AdminController {
         return TicketSummaryResponse.from(ticket, userName);
     }
 
-    /** Краткое представление пользователя для таблицы со списком */
+    /** Краткое представление пользователя для таблицы со списком (без подсчёта потраченных знаков) */
     private Map<String, Object> toSummary(User user) {
-        return Map.of(
-                "id", user.getId(),
-                "telegramId", user.getTelegramId(),
-                "username", user.getUsername() != null ? user.getUsername() : "",
-                "firstName", user.getFirstName() != null ? user.getFirstName() : "",
-                "createdAt", user.getCreatedAt(),
-                "lastActiveAt", user.getLastActiveAt() != null ? user.getLastActiveAt() : "",
-                "banned", user.isBanned(),
-                "premium", user.isPremium(),
-                "visitCount", user.getVisitCount(),
-                "totalActionsCount", user.getTotalActionsCount()
+        return toSummary(user, 0L);
+    }
+
+    /**
+     * Краткое представление пользователя для таблицы со списком.
+     * spentCredits передаётся отдельно, так как это агрегат из fortune_credit_log,
+     * посчитанный батчем на уровне страницы (см. getUsers()), а не поле сущности User.
+     * Map.of() имеет лимит в 10 пар "ключ-значение" — при добавлении totalSpent
+     * пришлось перейти на Map.ofEntries(...).
+     */
+    private Map<String, Object> toSummary(User user, long spentCredits) {
+        return Map.ofEntries(
+                Map.entry("id", user.getId()),
+                Map.entry("telegramId", user.getTelegramId()),
+                Map.entry("username", user.getUsername() != null ? user.getUsername() : ""),
+                Map.entry("firstName", user.getFirstName() != null ? user.getFirstName() : ""),
+                Map.entry("createdAt", user.getCreatedAt()),
+                Map.entry("lastActiveAt", user.getLastActiveAt() != null ? user.getLastActiveAt() : ""),
+                Map.entry("banned", user.isBanned()),
+                Map.entry("premium", user.isPremium()),
+                Map.entry("visitCount", user.getVisitCount()),
+                Map.entry("totalActionsCount", user.getTotalActionsCount()),
+                Map.entry("totalSpent", spentCredits)
         );
     }
 }

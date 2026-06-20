@@ -44,6 +44,7 @@ public class FortuneService {
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
     private final FortuneCreditService fortuneCreditService;
+    private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
     private final ThemeService themeService;
     private final CardMapper cardMapper;
@@ -67,7 +68,7 @@ public class FortuneService {
         // Новое гадание — списываем кредиты ДО вызова AI.
         // Если кредитов нет → InsufficientCreditsException → AI не вызывается.
         DiaryFeatureType featureType = toFeatureType(spreadType);
-        fortuneCreditService.spendCredits(user.getId(), featureType, spreadType.getCreditCost());
+        fortuneCreditService.spendCredits(user.getId(), featureType, featureCostService.getCost(spreadType));
 
         int cardCount = spreadService.getCardCount(spreadType);
         log.info("Новое гадание: userId={}, spreadType={}, категория='{}', выбираем {} карт", user.getId(), spreadType, category, cardCount);

@@ -31,6 +31,45 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Page<User> findByUsernameOrderByLastActiveAtAsc(@Param("username") String username, Pageable pageable);
 
     /**
+     * Сортировка по сумме потраченных знаков (агрегат из fortune_credit_log, не хранится на User).
+     * Native-запрос с LEFT JOIN на подзапрос-агрегат — обычный @Query (JPQL) не умеет
+     * сортировать по вычисляемой сумме из другой таблицы без отдельного DTO-проекта.
+     */
+    @Query(value = "SELECT u.* FROM users u " +
+            "LEFT JOIN (SELECT user_id, SUM(-delta) AS spent FROM fortune_credit_log WHERE delta < 0 GROUP BY user_id) s " +
+            "ON s.user_id = u.id " +
+            "ORDER BY COALESCE(s.spent, 0) DESC",
+            countQuery = "SELECT COUNT(*) FROM users",
+            nativeQuery = true)
+    Page<User> findAllOrderByTotalSpentDesc(Pageable pageable);
+
+    @Query(value = "SELECT u.* FROM users u " +
+            "LEFT JOIN (SELECT user_id, SUM(-delta) AS spent FROM fortune_credit_log WHERE delta < 0 GROUP BY user_id) s " +
+            "ON s.user_id = u.id " +
+            "ORDER BY COALESCE(s.spent, 0) ASC",
+            countQuery = "SELECT COUNT(*) FROM users",
+            nativeQuery = true)
+    Page<User> findAllOrderByTotalSpentAsc(Pageable pageable);
+
+    @Query(value = "SELECT u.* FROM users u " +
+            "LEFT JOIN (SELECT user_id, SUM(-delta) AS spent FROM fortune_credit_log WHERE delta < 0 GROUP BY user_id) s " +
+            "ON s.user_id = u.id " +
+            "WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%')) " +
+            "ORDER BY COALESCE(s.spent, 0) DESC",
+            countQuery = "SELECT COUNT(*) FROM users u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%'))",
+            nativeQuery = true)
+    Page<User> findByUsernameOrderByTotalSpentDesc(@Param("username") String username, Pageable pageable);
+
+    @Query(value = "SELECT u.* FROM users u " +
+            "LEFT JOIN (SELECT user_id, SUM(-delta) AS spent FROM fortune_credit_log WHERE delta < 0 GROUP BY user_id) s " +
+            "ON s.user_id = u.id " +
+            "WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%')) " +
+            "ORDER BY COALESCE(s.spent, 0) ASC",
+            countQuery = "SELECT COUNT(*) FROM users u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%'))",
+            nativeQuery = true)
+    Page<User> findByUsernameOrderByTotalSpentAsc(@Param("username") String username, Pageable pageable);
+
+    /**
      * Атомарный инкремент счётчика действий пользователя.
      * Вызывается из сервисов при создании новой записи активности.
      * Требует @Transactional на вызывающем методе.

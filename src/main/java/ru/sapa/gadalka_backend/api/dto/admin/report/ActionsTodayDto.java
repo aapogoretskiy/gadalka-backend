@@ -7,5 +7,6 @@ public record ActionsTodayDto(
         long celticCross,
         long compatibility,
         long numerology,
-        long dailyCard
+        long dailyCard,
+        long numerologyWeek
 ) {}

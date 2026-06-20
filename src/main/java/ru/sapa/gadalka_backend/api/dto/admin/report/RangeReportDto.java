@@ -25,13 +25,14 @@ public record RangeReportDto(
             long celticCross
     ) {}
 
-    /** Суммарные действия с разбивкой по типам */
+    /** Суммарные действия с разбивкой по типам (только платные функции) */
     public record ActionsRangeDto(
             long total,
             long compatibility,
             long threeCard,
             long horseshoe,
-            long celticCross
+            long celticCross,
+            long numerologyWeek
     ) {}
 
     /** Платежи с разбивкой по валюте */

@@ -33,9 +33,6 @@ import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER
 @RequiredArgsConstructor
 public class CompatibilityService {
 
-    /** Стоимость разблокировки полного анализа совместимости (в знаках). */
-    private static final int COMPATIBILITY_UNLOCK_COST = 3;
-
     private final NumerologyService numerologyService;
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final UserRepository userRepository;
@@ -43,6 +40,7 @@ public class CompatibilityService {
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
     private final FortuneCreditService fortuneCreditService;
+    private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -83,7 +81,7 @@ public class CompatibilityService {
     }
 
     /**
-     * Разблокировка полного анализа за {@value COMPATIBILITY_UNLOCK_COST} знака.
+     * Разблокировка полного анализа (стоимость см. {@link FeatureCostService#getCompatibilityUnlockCost()}).
      * Повторный вызов для уже разблокированного расклада — бесплатен.
      */
     public CompatibilityResponse unlockCompatibility(Long readingId, User user) {
@@ -93,7 +91,7 @@ public class CompatibilityService {
 
         if (reading.getUnlockedAt() == null) {
             // Ещё не разблокирован — списываем кредит
-            fortuneCreditService.spendCredits(user.getId(), DiaryFeatureType.COMPATIBILITY, COMPATIBILITY_UNLOCK_COST);
+            fortuneCreditService.spendCredits(user.getId(), DiaryFeatureType.COMPATIBILITY, featureCostService.getCompatibilityUnlockCost());
             reading.setUnlockedAt(OffsetDateTime.now());
             compatibilityReadingRepository.save(reading);
             log.info("Расклад совместимости разблокирован: readingId={}, userId={}", readingId, user.getId());

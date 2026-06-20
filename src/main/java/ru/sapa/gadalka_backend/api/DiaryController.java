@@ -51,6 +51,7 @@ public class DiaryController extends BaseController {
                     - `COMPATIBILITY` — совместимость
                     - `DAILY_CARD` — карта дня
                     - `NUMEROLOGY_DAY` — личный код дня
+                    - `NUMEROLOGY_WEEK` — расклад на неделю
 
                     Диапазон дат задаётся параметрами `from` и `to` в формате `yyyy-MM-dd` (включительно).
                     Записи возвращаются в порядке убывания даты создания.

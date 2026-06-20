@@ -6,5 +6,6 @@ public enum DiaryFeatureType {
     CELTIC_CROSS,
     COMPATIBILITY,
     DAILY_CARD,
-    NUMEROLOGY_DAY
+    NUMEROLOGY_DAY,
+    NUMEROLOGY_WEEK
 }
