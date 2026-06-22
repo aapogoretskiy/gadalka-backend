@@ -75,4 +75,27 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     /** Количество успешных Stars-транзакций за диапазон дат */
     @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from AND p.createdAt <= :to")
     Long countSucceededStarsBetween(OffsetDateTime from, OffsetDateTime to);
+
+    // ── Доход по маркетинговым источникам (вкладка "Рефералы") ────────────────
+
+    /**
+     * Доход по успешным платежам, сгруппированный по источнику регистрации пользователя
+     * ({@code users.referral_source}). Исключает пользовательские коды вида "ref_*" —
+     * там нужна модель "топ рефереров", а не маркетинговый разрез.
+     * <p>
+     * Возвращает: [referral_source, rub_minor, stars]
+     */
+    @Query(value = """
+        SELECT
+            u.referral_source,
+            COALESCE(SUM(p.amount_minor) FILTER (WHERE p.currency = 'RUB'), 0) AS rub_minor,
+            COALESCE(SUM(p.amount_minor) FILTER (WHERE p.currency = 'XTR'), 0) AS stars
+        FROM payments p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.status = 'SUCCEEDED'
+          AND u.referral_source IS NOT NULL
+          AND u.referral_source NOT LIKE 'ref\\_%' ESCAPE '\\'
+        GROUP BY u.referral_source
+        """, nativeQuery = true)
+    List<Object[]> findRevenueByReferralSource();
 }

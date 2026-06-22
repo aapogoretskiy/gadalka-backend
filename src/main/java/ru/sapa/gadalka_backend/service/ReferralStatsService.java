@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.repository.ReferralEventRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -17,7 +19,8 @@ import java.util.stream.Collectors;
  * <p>
  * Два среза:
  * <ul>
- *   <li><b>Маркетинг</b> — коды типа "telegram_channel1": клики, открытия, конверсия</li>
+ *   <li><b>Маркетинг</b> — коды типа "telegram_channel1": открытия, новые пользователи,
+ *       доход (раздельно в рублях и в Telegram Stars) и доля каждого источника в общем доходе</li>
  *   <li><b>Пользователи</b> — топ рефереров и список кого они пригласили</li>
  * </ul>
  */
@@ -27,6 +30,7 @@ public class ReferralStatsService {
 
     private final ReferralEventRepository referralEventRepository;
     private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
 
     /**
      * Сводная аналитика для вкладки "Рефералы":
@@ -71,24 +75,45 @@ public class ReferralStatsService {
     // ── Внутренние методы ─────────────────────────────────────────────────────
 
     private List<Map<String, Object>> buildMarketingStats() {
-        List<Object[]> rows = referralEventRepository.findMarketingSourceStats();
-        List<Map<String, Object>> result = new ArrayList<>();
+        List<Object[]> eventRows = referralEventRepository.findMarketingSourceStats();
+        List<Object[]> revenueRows = paymentRepository.findRevenueByReferralSource();
 
-        for (Object[] row : rows) {
+        // source -> [rubMinor, stars]
+        Map<String, long[]> revenueBySource = new HashMap<>();
+        long totalRubMinor = 0L;
+        long totalStars = 0L;
+        for (Object[] row : revenueRows) {
             String source   = (String) row[0];
-            long clicks     = toLong(row[1]);
-            long appOpens   = toLong(row[2]);
-            long newUsers   = toLong(row[3]);
+            long rubMinor    = toLong(row[1]);
+            long stars       = toLong(row[2]);
+            revenueBySource.put(source, new long[]{rubMinor, stars});
+            totalRubMinor += rubMinor;
+            totalStars    += stars;
+        }
 
-            // Конверсия: новые / клики × 100 (защита от деления на ноль)
-            double conversion = clicks > 0 ? Math.round(newUsers * 1000.0 / clicks) / 10.0 : 0.0;
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object[] row : eventRows) {
+            String source   = (String) row[0];
+            long appOpens   = toLong(row[1]);
+            long newUsers   = toLong(row[2]);
+
+            long[] revenue   = revenueBySource.getOrDefault(source, new long[]{0L, 0L});
+            long rubMinor    = revenue[0];
+            long stars       = revenue[1];
+
+            // Доля источника в общем доходе — рубли и звёзды считаются раздельно,
+            // т.к. это разные валюты и смешивать их в одном % некорректно.
+            double pctRubRevenue   = totalRubMinor > 0 ? Math.round(rubMinor * 1000.0 / totalRubMinor) / 10.0 : 0.0;
+            double pctStarsRevenue = totalStars > 0 ? Math.round(stars * 1000.0 / totalStars) / 10.0 : 0.0;
 
             result.add(Map.of(
-                    "source",          source,
-                    "clicks",          clicks,
-                    "appOpens",        appOpens,
-                    "newUsers",        newUsers,
-                    "conversionPct",   conversion
+                    "source",            source,
+                    "appOpens",          appOpens,
+                    "newUsers",          newUsers,
+                    "revenueRub",        rubMinor / 100.0,
+                    "pctRubRevenue",     pctRubRevenue,
+                    "revenueStars",      stars,
+                    "pctStarsRevenue",   pctStarsRevenue
             ));
         }
         return result;

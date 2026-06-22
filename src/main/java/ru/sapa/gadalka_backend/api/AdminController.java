@@ -96,15 +96,17 @@ public class AdminController {
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(defaultValue = "false") boolean hideInactive,
             HttpServletRequest request) {
 
         Long adminId = (Long) request.getAttribute("adminTelegramId");
-        log.info("Admin {} запросил список пользователей: page={}, search={}, sortBy={}, sortDir={}",
+        log.info("Admin {} запросил список пользователей: page={}, search={}, sortBy={}, sortDir={}, hideInactive={}",
                 adminId,
                 page,
                 search,
                 sortBy,
-                sortDir);
+                sortDir,
+                hideInactive);
 
         // Защита от произвольных имён полей
         String safeField = ALLOWED_SORT_FIELDS.contains(sortBy) ? sortBy : "createdAt";
@@ -124,20 +126,39 @@ public class AdminController {
             try {
                 Long telegramId = Long.parseLong(trimmed);
                 Optional<User> found = userRepository.findByTelegramId(telegramId);
+                // Точный поиск по ID — фильтр неактивности применяем "вручную" к найденному пользователю
+                if (hideInactive) {
+                    found = found.filter(u -> u.getTotalActionsCount() > 0 && u.getVisitCount() > 1);
+                }
                 List<User> list = found.map(List::of).orElse(List.of());
                 users = new PageImpl<>(list, pageable, list.size());
             } catch (NumberFormatException e) {
                 // Иначе ищем по username
                 if (sortByLastActive) {
                     PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
-                    users = direction == Sort.Direction.DESC
-                            ? userRepository.findByUsernameOrderByLastActiveAtDesc(trimmed, unsortedPageable)
-                            : userRepository.findByUsernameOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                    if (hideInactive) {
+                        users = direction == Sort.Direction.DESC
+                                ? userRepository.findByUsernameActiveOrderByLastActiveAtDesc(trimmed, unsortedPageable)
+                                : userRepository.findByUsernameActiveOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                    } else {
+                        users = direction == Sort.Direction.DESC
+                                ? userRepository.findByUsernameOrderByLastActiveAtDesc(trimmed, unsortedPageable)
+                                : userRepository.findByUsernameOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                    }
                 } else if (sortByTotalSpent) {
                     PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
-                    users = direction == Sort.Direction.DESC
-                            ? userRepository.findByUsernameOrderByTotalSpentDesc(trimmed, unsortedPageable)
-                            : userRepository.findByUsernameOrderByTotalSpentAsc(trimmed, unsortedPageable);
+                    if (hideInactive) {
+                        users = direction == Sort.Direction.DESC
+                                ? userRepository.findByUsernameActiveOrderByTotalSpentDesc(trimmed, unsortedPageable)
+                                : userRepository.findByUsernameActiveOrderByTotalSpentAsc(trimmed, unsortedPageable);
+                    } else {
+                        users = direction == Sort.Direction.DESC
+                                ? userRepository.findByUsernameOrderByTotalSpentDesc(trimmed, unsortedPageable)
+                                : userRepository.findByUsernameOrderByTotalSpentAsc(trimmed, unsortedPageable);
+                    }
+                } else if (hideInactive) {
+                    users = userRepository.findByUsernameContainingIgnoreCaseAndTotalActionsCountGreaterThanAndVisitCountGreaterThan(
+                            trimmed, 0, 1, pageable);
                 } else {
                     users = userRepository.findByUsernameContainingIgnoreCase(trimmed, pageable);
                 }
@@ -145,14 +166,28 @@ public class AdminController {
         } else {
             if (sortByLastActive) {
                 PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
-                users = direction == Sort.Direction.DESC
-                        ? userRepository.findAllOrderByLastActiveAtDesc(unsortedPageable)
-                        : userRepository.findAllOrderByLastActiveAtAsc(unsortedPageable);
+                if (hideInactive) {
+                    users = direction == Sort.Direction.DESC
+                            ? userRepository.findAllActiveOrderByLastActiveAtDesc(unsortedPageable)
+                            : userRepository.findAllActiveOrderByLastActiveAtAsc(unsortedPageable);
+                } else {
+                    users = direction == Sort.Direction.DESC
+                            ? userRepository.findAllOrderByLastActiveAtDesc(unsortedPageable)
+                            : userRepository.findAllOrderByLastActiveAtAsc(unsortedPageable);
+                }
             } else if (sortByTotalSpent) {
                 PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
-                users = direction == Sort.Direction.DESC
-                        ? userRepository.findAllOrderByTotalSpentDesc(unsortedPageable)
-                        : userRepository.findAllOrderByTotalSpentAsc(unsortedPageable);
+                if (hideInactive) {
+                    users = direction == Sort.Direction.DESC
+                            ? userRepository.findAllActiveOrderByTotalSpentDesc(unsortedPageable)
+                            : userRepository.findAllActiveOrderByTotalSpentAsc(unsortedPageable);
+                } else {
+                    users = direction == Sort.Direction.DESC
+                            ? userRepository.findAllOrderByTotalSpentDesc(unsortedPageable)
+                            : userRepository.findAllOrderByTotalSpentAsc(unsortedPageable);
+                }
+            } else if (hideInactive) {
+                users = userRepository.findByTotalActionsCountGreaterThanAndVisitCountGreaterThan(0, 1, pageable);
             } else {
                 users = userRepository.findAll(pageable);
             }
