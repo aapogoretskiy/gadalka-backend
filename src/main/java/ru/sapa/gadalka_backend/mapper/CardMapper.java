@@ -1,12 +1,16 @@
 package ru.sapa.gadalka_backend.mapper;
 
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
 import ru.sapa.gadalka_backend.api.dto.card.DailyCardResponse;
 import ru.sapa.gadalka_backend.domain.Card;
 import ru.sapa.gadalka_backend.domain.CardDeckTheme;
 import ru.sapa.gadalka_backend.domain.DailyCard;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 @Component
@@ -48,7 +52,25 @@ public class CardMapper {
                 card.getMeaning(),
                 card.getAdvice(),
                 resolveImageUrl(card, theme),
-                dailyCard.getDate());
+                dailyCard.getDate(),
+                card.getInsightTitle(),
+                card.getDescriptionParagraph1(),
+                card.getDescriptionParagraph2(),
+                parseKeywords(card.getKeywords()));
+    }
+
+    /**
+     * Разбивает строку ключевых слов карты ("НАЧАЛО, ПОТЕНЦИАЛ, ИМПУЛЬС") на список.
+     * Возвращает пустой список, если у карты пока нет ключевых слов (например, старые данные).
+     */
+    private List<String> parseKeywords(String keywords) {
+        if (!StringUtils.hasText(keywords)) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(keywords.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toList();
     }
 
     /**
@@ -56,7 +78,7 @@ public class CardMapper {
      * Логика:
      * 1. Если у темы задан base_url И у карты есть slug →
      *    собираем URL: base_url + card.slug + "." + imageExtension
-     *    Пример: "https://cdn.magicliora.com/themes/cosmic/" + "the-fool" + ".webp"
+     *    Пример: "<a href="https://cdn.magicliora.com/themes/cosmic/">...</a>" + "the-fool" + ".webp"
      * 2. Иначе → возвращаем card.imageUrl (классика или null, если картинок ещё нет)
      * Расширение берётся из темы (jpg/png/webp и т.д.) — каждая тема может
      * использовать свой формат. Метод public — используется и в других сервисах.

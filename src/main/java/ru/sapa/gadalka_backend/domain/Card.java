@@ -39,4 +39,20 @@ public class Card {
 
     @Column(name = "slug", length = 100)
     private String slug;
+
+    @Column(name = "insight_title")
+    private String insightTitle;
+
+    @Column(name = "description_paragraph_1", columnDefinition = "TEXT")
+    private String descriptionParagraph1;
+
+    @Column(name = "description_paragraph_2", columnDefinition = "TEXT")
+    private String descriptionParagraph2;
+
+    /**
+     * Ключевые слова карты, хранятся как строка через запятую (например: "НАЧАЛО, ПОТЕНЦИАЛ, ИМПУЛЬС").
+     * В DTO разбиваются на List<String> мапппером.
+     */
+    @Column(name = "keywords")
+    private String keywords;
 }
