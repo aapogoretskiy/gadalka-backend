@@ -98,4 +98,21 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         GROUP BY u.referral_source
         """, nativeQuery = true)
     List<Object[]> findRevenueByReferralSource();
+
+    /**
+     * Доход по успешным платежам пользователей без источника (referral_source IS NULL) —
+     * это "органика": пользователи, которые пришли в бота сами, без реферального кода.
+     * <p>
+     * Возвращает одну строку: [rub_minor, stars].
+     */
+    @Query(value = """
+        SELECT
+            COALESCE(SUM(p.amount_minor) FILTER (WHERE p.currency = 'RUB'), 0) AS rub_minor,
+            COALESCE(SUM(p.amount_minor) FILTER (WHERE p.currency = 'XTR'), 0) AS stars
+        FROM payments p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.status = 'SUCCEEDED'
+          AND u.referral_source IS NULL
+        """, nativeQuery = true)
+    List<Object[]> findRevenueForOrganicUsers();
 }

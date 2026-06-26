@@ -152,4 +152,21 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /** Количество новых пользователей за диапазон дат */
     long countByCreatedAtBetween(OffsetDateTime from, OffsetDateTime to);
+
+    // ── Органика (вкладка "Рефералы" → "Маркетинговые источники") ────────────
+
+    /**
+     * Количество пользователей без источника регистрации (referral_source IS NULL) —
+     * это "органика": пришли в бота сами, без реферального кода.
+     */
+    @Query("SELECT COUNT(u) FROM User u WHERE u.referralSource IS NULL")
+    long countOrganicUsers();
+
+    /**
+     * Суммарное количество посещений (visit_count) органических пользователей.
+     * Используется как замена счётчику "Открытий" — для органики событий APP_OPEN
+     * в referral_events не существует (они создаются только при наличии реферального кода).
+     */
+    @Query("SELECT COALESCE(SUM(u.visitCount), 0) FROM User u WHERE u.referralSource IS NULL")
+    long sumVisitCountForOrganicUsers();
 }

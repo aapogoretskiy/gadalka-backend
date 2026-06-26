@@ -74,9 +74,12 @@ public class ReferralStatsService {
 
     // ── Внутренние методы ─────────────────────────────────────────────────────
 
+    private static final String ORGANIC_SOURCE_LABEL = "Органика";
+
     private List<Map<String, Object>> buildMarketingStats() {
         List<Object[]> eventRows = referralEventRepository.findMarketingSourceStats();
         List<Object[]> revenueRows = paymentRepository.findRevenueByReferralSource();
+        List<Object[]> organicRevenueRows = paymentRepository.findRevenueForOrganicUsers();
 
         // source -> [rubMinor, stars]
         Map<String, long[]> revenueBySource = new HashMap<>();
@@ -90,6 +93,18 @@ public class ReferralStatsService {
             totalRubMinor += rubMinor;
             totalStars    += stars;
         }
+
+        // Доход "органики" (referral_source IS NULL) — отдельный запрос,
+        // потому что findRevenueByReferralSource() такие строки исключает.
+        long organicRubMinor = 0L;
+        long organicStars = 0L;
+        if (!organicRevenueRows.isEmpty()) {
+            Object[] row = organicRevenueRows.get(0);
+            organicRubMinor = toLong(row[0]);
+            organicStars    = toLong(row[1]);
+        }
+        totalRubMinor += organicRubMinor;
+        totalStars    += organicStars;
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object[] row : eventRows) {
@@ -116,6 +131,25 @@ public class ReferralStatsService {
                     "pctStarsRevenue",   pctStarsRevenue
             ));
         }
+
+        // "Органика" — пользователи без реферального кода (referral_source IS NULL).
+        // Для них нет событий APP_OPEN в referral_events, поэтому вместо них
+        // используем сумму visit_count как аналог "Открытий".
+        long organicNewUsers = userRepository.countOrganicUsers();
+        long organicAppOpens = userRepository.sumVisitCountForOrganicUsers();
+        double organicPctRub   = totalRubMinor > 0 ? Math.round(organicRubMinor * 1000.0 / totalRubMinor) / 10.0 : 0.0;
+        double organicPctStars = totalStars > 0 ? Math.round(organicStars * 1000.0 / totalStars) / 10.0 : 0.0;
+
+        result.add(Map.of(
+                "source",            ORGANIC_SOURCE_LABEL,
+                "appOpens",          organicAppOpens,
+                "newUsers",          organicNewUsers,
+                "revenueRub",        organicRubMinor / 100.0,
+                "pctRubRevenue",     organicPctRub,
+                "revenueStars",      organicStars,
+                "pctStarsRevenue",   organicPctStars
+        ));
+
         return result;
     }
 
