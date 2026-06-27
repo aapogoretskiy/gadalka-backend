@@ -84,7 +84,7 @@ openrouter:
 aitunnel:
   api-key: ${AITUNNEL_API_KEY}
   url: https://api.aitunnel.ru/v1/chat/completions
-  model: gpt-4o-mini
+  model: deepseek-v4-flash
 
 # Swagger/OpenAPI: по умолчанию ВЫКЛЮЧЕН
 # В dev: добавить в .env или Run Configuration: SWAGGER_ENABLED=true
