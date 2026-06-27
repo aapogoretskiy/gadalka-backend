@@ -2,6 +2,7 @@ package ru.sapa.gadalka_backend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 
@@ -12,30 +13,23 @@ import java.util.Optional;
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByProviderPaymentId(String providerPaymentId);
-
     List<Payment> findAllByUserIdOrderByCreatedAtDesc(Long userId);
-
     boolean existsByProviderPaymentIdAndStatus(String providerPaymentId, PaymentStatus status);
 
-    // ── Отчёты ──────────────────────────────────────────────────────────────
+    // ── Отчёты — стандартные методы ──────────────────────────────────────────
 
-    /** Суммарная выручка в рублях (amount_minor / 100) по успешным RUB-платежам */
     @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB'")
     Long sumSucceededRub();
 
-    /** Выручка в рублях за период */
     @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.createdAt >= :from")
     Long sumSucceededRubSince(OffsetDateTime from);
 
-    /** Количество уникальных платящих пользователей */
     @Query("SELECT COUNT(DISTINCT p.userId) FROM Payment p WHERE p.status = 'SUCCEEDED'")
     Long countPayingUsers();
 
-    /** Топ продуктов: [productCode, count] по убыванию продаж */
     @Query("SELECT p.productCode, COUNT(p) FROM Payment p WHERE p.status = 'SUCCEEDED' GROUP BY p.productCode ORDER BY COUNT(p) DESC")
     List<Object[]> topProducts();
 
-    /** Выручка по дням за последние N дней: [date, sumMinor] */
     @Query(value = """
         SELECT DATE(created_at AT TIME ZONE 'UTC') as day, SUM(amount_minor) as total
         FROM payments
@@ -44,47 +38,29 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         """, nativeQuery = true)
     List<Object[]> revenueByDay(OffsetDateTime from);
 
-    // ── Stars (Telegram) ──────────────────────────────────────────────────
-
-    /** Суммарно Stars потрачено за всё время */
     @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR'")
     Long sumSucceededStars();
 
-    /** Stars за период */
     @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from")
     Long sumSucceededStarsSince(OffsetDateTime from);
 
-    /** Количество уникальных Stars-плательщиков */
     @Query("SELECT COUNT(DISTINCT p.userId) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR'")
     Long countStarsPayingUsers();
 
-    // ── Отчёты за диапазон ──────────────────────────────────────────────────
-
-    /** Выручка в рублях (копейки) за диапазон дат */
     @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.createdAt >= :from AND p.createdAt <= :to")
     Long sumSucceededRubBetween(OffsetDateTime from, OffsetDateTime to);
 
-    /** Количество успешных рублёвых транзакций за диапазон дат */
     @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.createdAt >= :from AND p.createdAt <= :to")
     Long countSucceededRubBetween(OffsetDateTime from, OffsetDateTime to);
 
-    /** Stars за диапазон дат */
     @Query("SELECT COALESCE(SUM(p.amountMinor), 0) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from AND p.createdAt <= :to")
     Long sumSucceededStarsBetween(OffsetDateTime from, OffsetDateTime to);
 
-    /** Количество успешных Stars-транзакций за диапазон дат */
     @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.createdAt >= :from AND p.createdAt <= :to")
     Long countSucceededStarsBetween(OffsetDateTime from, OffsetDateTime to);
 
     // ── Доход по маркетинговым источникам (вкладка "Рефералы") ────────────────
 
-    /**
-     * Доход по успешным платежам, сгруппированный по источнику регистрации пользователя
-     * ({@code users.referral_source}). Исключает пользовательские коды вида "ref_*" —
-     * там нужна модель "топ рефереров", а не маркетинговый разрез.
-     * <p>
-     * Возвращает: [referral_source, rub_minor, stars]
-     */
     @Query(value = """
         SELECT
             u.referral_source,
@@ -99,12 +75,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         """, nativeQuery = true)
     List<Object[]> findRevenueByReferralSource();
 
-    /**
-     * Доход по успешным платежам пользователей без источника (referral_source IS NULL) —
-     * это "органика": пользователи, которые пришли в бота сами, без реферального кода.
-     * <p>
-     * Возвращает одну строку: [rub_minor, stars].
-     */
     @Query(value = """
         SELECT
             COALESCE(SUM(p.amount_minor) FILTER (WHERE p.currency = 'RUB'), 0) AS rub_minor,
@@ -115,4 +85,81 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
           AND u.referral_source IS NULL
         """, nativeQuery = true)
     List<Object[]> findRevenueForOrganicUsers();
+
+    // ── Отчёты — source-aware методы ─────────────────────────────────────────
+    // Токен "__organic__" = referral_source IS NULL. source = null → фильтр отключён.
+
+    @Query(value = "SELECT COALESCE(SUM(p.amount_minor), 0) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long sumSucceededRubWithSource(@Param("source") String source);
+
+    @Query(value = "SELECT COALESCE(SUM(p.amount_minor), 0) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.created_at >= :from " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long sumSucceededRubSinceWithSource(@Param("from") OffsetDateTime from, @Param("source") String source);
+
+    @Query(value = "SELECT COUNT(DISTINCT p.user_id) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long countPayingUsersWithSource(@Param("source") String source);
+
+    @Query(value = "SELECT COALESCE(SUM(p.amount_minor), 0) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long sumSucceededStarsWithSource(@Param("source") String source);
+
+    @Query(value = "SELECT COALESCE(SUM(p.amount_minor), 0) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.created_at >= :from " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long sumSucceededStarsSinceWithSource(@Param("from") OffsetDateTime from, @Param("source") String source);
+
+    @Query(value = "SELECT COUNT(DISTINCT p.user_id) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long countStarsPayingUsersWithSource(@Param("source") String source);
+
+    @Query(value = "SELECT COALESCE(SUM(p.amount_minor), 0) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.created_at >= :from AND p.created_at <= :to " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long sumSucceededRubBetweenWithSource(
+            @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, @Param("source") String source);
+
+    @Query(value = "SELECT COUNT(p.*) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'RUB' AND p.created_at >= :from AND p.created_at <= :to " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long countSucceededRubBetweenWithSource(
+            @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, @Param("source") String source);
+
+    @Query(value = "SELECT COALESCE(SUM(p.amount_minor), 0) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.created_at >= :from AND p.created_at <= :to " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long sumSucceededStarsBetweenWithSource(
+            @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, @Param("source") String source);
+
+    @Query(value = "SELECT COUNT(p.*) FROM payments p " +
+            "JOIN users u ON u.id = p.user_id " +
+            "WHERE p.status = 'SUCCEEDED' AND p.currency = 'XTR' AND p.created_at >= :from AND p.created_at <= :to " +
+            "AND (:source IS NULL OR (:source = '__organic__' AND u.referral_source IS NULL) OR (:source <> '__organic__' AND u.referral_source = :source))",
+            nativeQuery = true)
+    Long countSucceededStarsBetweenWithSource(
+            @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, @Param("source") String source);
 }

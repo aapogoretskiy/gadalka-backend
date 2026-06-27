@@ -1,6 +1,7 @@
 package ru.sapa.gadalka_backend.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.report.ActionsTodayDto;
@@ -9,6 +10,7 @@ import ru.sapa.gadalka_backend.api.dto.admin.report.CompatibilityReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.CreditsReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.FortunesReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.PaymentsReportDto;
+import ru.sapa.gadalka_backend.api.dto.admin.report.RangeReportDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.ReturningUsersDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.UsersReportDto;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
@@ -22,8 +24,6 @@ import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.repository.UserVisitRepository;
 
-import ru.sapa.gadalka_backend.api.dto.admin.report.RangeReportDto;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -32,8 +32,12 @@ import java.time.ZoneId;
 /**
  * Агрегирует статистику для страницы отчётов в админ-панели.
  *
- * <p>Все запросы — read-only, данные собираются в один проход по репозиториям.
- * Для MVP достаточно прямых запросов без кеша — страница отчётов не нагружена.
+ * <p>Все методы принимают опциональный параметр {@code source}:
+ * <ul>
+ *   <li>{@code null} — без фильтра (все пользователи)</li>
+ *   <li>{@code "__organic__"} — пользователи без источника (referral_source IS NULL)</li>
+ *   <li>любая другая строка — пользователи с конкретным referral_source</li>
+ * </ul>
  */
 @Service
 @RequiredArgsConstructor
@@ -50,103 +54,96 @@ public class ReportService {
     private final FortuneCreditLogRepository creditLogRepository;
 
     /**
-     * Собирает полный снимок метрик и возвращает типизированный DTO.
+     * Полный снимок метрик. Если source != null — все счётчики фильтруются по источнику.
      */
     @Transactional(readOnly = true)
-    public AdminReportDto buildReport() {
+    public AdminReportDto buildReport(@Nullable String source) {
         OffsetDateTime now      = OffsetDateTime.now();
         OffsetDateTime minus1d  = now.minusDays(1);
         OffsetDateTime minus7d  = now.minusDays(7);
         OffsetDateTime minus30d = now.minusDays(30);
 
         return new AdminReportDto(
-                buildUsersSection(minus1d, minus7d, minus30d),
-                buildFortunesSection(minus7d, minus30d),
-                buildCompatibilitySection(minus7d, minus30d),
-                buildActionsTodaySection(minus1d),
-                buildReturningUsersSection(minus1d, minus7d, minus30d),
-                buildPaymentsSection(minus7d, minus30d),
-                buildCreditsSection()
+                buildUsersSection(minus1d, minus7d, minus30d, source),
+                buildFortunesSection(minus7d, minus30d, source),
+                buildCompatibilitySection(minus7d, minus30d, source),
+                buildActionsTodaySection(minus1d, source),
+                buildReturningUsersSection(minus1d, minus7d, minus30d, source),
+                buildPaymentsSection(minus7d, minus30d, source),
+                buildCreditsSection()  // кредиты не фильтруются по источнику
         );
     }
 
     // ── Пользователи ─────────────────────────────────────────────────────────
 
     private UsersReportDto buildUsersSection(
-            OffsetDateTime minus1d, OffsetDateTime minus7d, OffsetDateTime minus30d) {
+            OffsetDateTime minus1d, OffsetDateTime minus7d, OffsetDateTime minus30d,
+            @Nullable String source) {
 
         return new UsersReportDto(
-                userRepository.count(),
-                userRepository.countByCreatedAtAfter(minus1d),
-                userRepository.countByCreatedAtAfter(minus7d),
-                userRepository.countByCreatedAtAfter(minus30d),
-                userRepository.countByLastActiveAtAfter(minus1d),   // DAU: активны за 24ч
-                userRepository.countByLastActiveAtAfter(minus7d)    // WAU: активны за 7 дней
+                userRepository.countWithSourceFilter(source),
+                userRepository.countByCreatedAtAfterWithSource(minus1d, source),
+                userRepository.countByCreatedAtAfterWithSource(minus7d, source),
+                userRepository.countByCreatedAtAfterWithSource(minus30d, source),
+                userRepository.countByLastActiveAtAfterWithSource(minus1d, source),
+                userRepository.countByLastActiveAtAfterWithSource(minus7d, source)
         );
     }
 
     // ── Гадания ──────────────────────────────────────────────────────────────
 
     private FortunesReportDto buildFortunesSection(
-            OffsetDateTime minus7d, OffsetDateTime minus30d) {
+            OffsetDateTime minus7d, OffsetDateTime minus30d, @Nullable String source) {
 
         return new FortunesReportDto(
-                fortuneRepository.count(),
-                fortuneRepository.countByCreatedAtAfter(minus7d),
-                fortuneRepository.countByCreatedAtAfter(minus30d)
+                fortuneRepository.countWithSourceFilter(source),
+                fortuneRepository.countByCreatedAtAfterWithSource(minus7d, source),
+                fortuneRepository.countByCreatedAtAfterWithSource(minus30d, source)
         );
     }
 
     // ── Совместимость ────────────────────────────────────────────────────────
 
     private CompatibilityReportDto buildCompatibilitySection(
-            OffsetDateTime minus7d, OffsetDateTime minus30d) {
+            OffsetDateTime minus7d, OffsetDateTime minus30d, @Nullable String source) {
 
         return new CompatibilityReportDto(
-                compatibilityReadingRepository.count(),
-                compatibilityReadingRepository.countByCreatedAtAfter(minus7d),
-                compatibilityReadingRepository.countByCreatedAtAfter(minus30d)
+                compatibilityReadingRepository.countWithSourceFilter(source),
+                compatibilityReadingRepository.countByCreatedAtAfterWithSource(minus7d, source),
+                compatibilityReadingRepository.countByCreatedAtAfterWithSource(minus30d, source)
         );
     }
 
     // ── Платежи ──────────────────────────────────────────────────────────────
 
     private PaymentsReportDto buildPaymentsSection(
-            OffsetDateTime minus7d, OffsetDateTime minus30d) {
+            OffsetDateTime minus7d, OffsetDateTime minus30d, @Nullable String source) {
 
-        // Рублёвые платежи (Robokassa) — amount_minor хранится в копейках
-        // Stars (Telegram) — amount_minor хранится в штуках (1 Star = 1)
-        // Конвертацию kopecks → рубли делаем на фронте
         return new PaymentsReportDto(
-                paymentRepository.sumSucceededRub(),
-                paymentRepository.sumSucceededRubSince(minus7d),
-                paymentRepository.sumSucceededRubSince(minus30d),
-                paymentRepository.countPayingUsers(),
-                paymentRepository.sumSucceededStars(),
-                paymentRepository.sumSucceededStarsSince(minus7d),
-                paymentRepository.sumSucceededStarsSince(minus30d),
-                paymentRepository.countStarsPayingUsers()
+                paymentRepository.sumSucceededRubWithSource(source),
+                paymentRepository.sumSucceededRubSinceWithSource(minus7d, source),
+                paymentRepository.sumSucceededRubSinceWithSource(minus30d, source),
+                paymentRepository.countPayingUsersWithSource(source),
+                paymentRepository.sumSucceededStarsWithSource(source),
+                paymentRepository.sumSucceededStarsSinceWithSource(minus7d, source),
+                paymentRepository.sumSucceededStarsSinceWithSource(minus30d, source),
+                paymentRepository.countStarsPayingUsersWithSource(source)
         );
     }
 
     // ── Детализация действий за сутки ────────────────────────────────────────
 
-    /**
-     * Разбивка по типам действий за последние 24 часа.
-     * Fortune считаем по SpreadType; старые записи без типа относим к THREE_CARD.
-     * NumerologyDayReading и DailyCard хранят LocalDate, поэтому считаем с начала сегодняшнего дня.
-     */
-    private ActionsTodayDto buildActionsTodaySection(OffsetDateTime minus1d) {
+    private ActionsTodayDto buildActionsTodaySection(OffsetDateTime minus1d, @Nullable String source) {
         LocalDate today = LocalDate.now();
 
-        long threeCard   = fortuneRepository.countByCreatedAtAfterAndSpreadType(minus1d, SpreadType.THREE_CARD)
-                         + fortuneRepository.countByCreatedAtAfterAndSpreadTypeIsNull(minus1d);
-        long horseshoe   = fortuneRepository.countByCreatedAtAfterAndSpreadType(minus1d, SpreadType.HORSESHOE);
-        long celticCross = fortuneRepository.countByCreatedAtAfterAndSpreadType(minus1d, SpreadType.CELTIC_CROSS);
-        long compatibility = compatibilityReadingRepository.countByCreatedAtAfter(minus1d);
-        long numerology  = numerologyDayReadingRepository.countByDateGreaterThanEqual(today);
-        long dailyCard   = dailyCardRepository.countByDateGreaterThanEqual(today);
-        long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtAfter(minus1d);
+        long threeCard   = fortuneRepository.countByCreatedAtAfterAndSpreadTypeWithSource(minus1d, SpreadType.THREE_CARD.name(), source)
+                         + fortuneRepository.countByCreatedAtAfterAndSpreadTypeIsNullWithSource(minus1d, source);
+        long horseshoe   = fortuneRepository.countByCreatedAtAfterAndSpreadTypeWithSource(minus1d, SpreadType.HORSESHOE.name(), source);
+        long celticCross = fortuneRepository.countByCreatedAtAfterAndSpreadTypeWithSource(minus1d, SpreadType.CELTIC_CROSS.name(), source);
+        long compatibility = compatibilityReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
+        long numerology  = numerologyDayReadingRepository.countByDateGreaterThanEqualWithSource(today, source);
+        long dailyCard   = dailyCardRepository.countByDateGreaterThanEqualWithSource(today, source);
+        long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
         long total       = threeCard + horseshoe + celticCross + compatibility + numerology + dailyCard + numerologyWeek;
 
         return new ActionsTodayDto(total, threeCard, horseshoe, celticCross, compatibility, numerology, dailyCard, numerologyWeek);
@@ -154,64 +151,45 @@ public class ReportService {
 
     // ── Повторные посещения ───────────────────────────────────────────────────
 
-    /**
-     * Количество пользователей, зашедших более одного раза за период.
-     * Данные берутся из таблицы user_visits.
-     */
     private ReturningUsersDto buildReturningUsersSection(
-            OffsetDateTime minus1d, OffsetDateTime minus7d, OffsetDateTime minus30d) {
+            OffsetDateTime minus1d, OffsetDateTime minus7d, OffsetDateTime minus30d,
+            @Nullable String source) {
 
         return new ReturningUsersDto(
-                userVisitRepository.countUsersWithMultipleVisits(minus1d),
-                userVisitRepository.countUsersWithMultipleVisits(minus7d),
-                userVisitRepository.countUsersWithMultipleVisits(minus30d)
+                userVisitRepository.countUsersWithMultipleVisitsWithSource(minus1d, source),
+                userVisitRepository.countUsersWithMultipleVisitsWithSource(minus7d, source),
+                userVisitRepository.countUsersWithMultipleVisitsWithSource(minus30d, source)
         );
     }
 
     // ── Отчёт за произвольный диапазон ──────────────────────────────────────
 
-    /**
-     * Собирает метрики за произвольный диапазон дат.
-     * Даты трактуются как начало и конец дня в московском часовом поясе (Europe/Moscow).
-     *
-     * @param fromDate начало диапазона (включительно)
-     * @param toDate   конец диапазона (включительно)
-     */
     @Transactional(readOnly = true)
-    public RangeReportDto buildRangeReport(LocalDateTime fromDate, LocalDateTime toDate) {
+    public RangeReportDto buildRangeReport(LocalDateTime fromDate, LocalDateTime toDate, @Nullable String source) {
         ZoneId moscow = ZoneId.of("Europe/Moscow");
 
-        // Трактуем введённое пользователем время как московское и конвертируем в OffsetDateTime
         OffsetDateTime from = fromDate.atZone(moscow).toOffsetDateTime();
         OffsetDateTime to   = toDate.atZone(moscow).toOffsetDateTime();
 
-        // ── Новые пользователи ───────────────────────────────────────────────
-        long newUsers = userRepository.countByCreatedAtBetween(from, to);
+        long newUsers = userRepository.countByCreatedAtBetweenWithSource(from, to, source);
 
-        // ── Гадания ──────────────────────────────────────────────────────────
-        long threeCard   = fortuneRepository.countByCreatedAtBetweenAndSpreadType(from, to, SpreadType.THREE_CARD)
-                         + fortuneRepository.countByCreatedAtBetweenAndSpreadTypeIsNull(from, to);
-        long horseshoe   = fortuneRepository.countByCreatedAtBetweenAndSpreadType(from, to, SpreadType.HORSESHOE);
-        long celticCross = fortuneRepository.countByCreatedAtBetweenAndSpreadType(from, to, SpreadType.CELTIC_CROSS);
+        long threeCard   = fortuneRepository.countByCreatedAtBetweenAndSpreadTypeWithSource(from, to, SpreadType.THREE_CARD.name(), source)
+                         + fortuneRepository.countByCreatedAtBetweenAndSpreadTypeIsNullWithSource(from, to, source);
+        long horseshoe   = fortuneRepository.countByCreatedAtBetweenAndSpreadTypeWithSource(from, to, SpreadType.HORSESHOE.name(), source);
+        long celticCross = fortuneRepository.countByCreatedAtBetweenAndSpreadTypeWithSource(from, to, SpreadType.CELTIC_CROSS.name(), source);
         long fortunesTotal = threeCard + horseshoe + celticCross;
 
-        // ── Совместимость ────────────────────────────────────────────────────
-        long compatibility = compatibilityReadingRepository.countByCreatedAtBetween(from, to);
+        long compatibility = compatibilityReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
+        long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
 
-        // ── Расклад на неделю (платная функция) ───────────────────────────────
-        long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtBetween(from, to);
-
-        // ── Действия (всё вместе, только платные функции) ──────────────────
         long actionsTotal = fortunesTotal + compatibility + numerologyWeek;
 
-        // ── Повторные посещения ───────────────────────────────────────────────
-        long returningUsers = userVisitRepository.countUsersWithMultipleVisitsBetween(from, to);
+        long returningUsers = userVisitRepository.countUsersWithMultipleVisitsBetweenWithSource(from, to, source);
 
-        // ── Платежи ──────────────────────────────────────────────────────────
-        long rubKopecks      = paymentRepository.sumSucceededRubBetween(from, to);
-        long rubTransactions = paymentRepository.countSucceededRubBetween(from, to);
-        long stars           = paymentRepository.sumSucceededStarsBetween(from, to);
-        long starsTransactions = paymentRepository.countSucceededStarsBetween(from, to);
+        long rubKopecks      = paymentRepository.sumSucceededRubBetweenWithSource(from, to, source);
+        long rubTransactions = paymentRepository.countSucceededRubBetweenWithSource(from, to, source);
+        long stars           = paymentRepository.sumSucceededStarsBetweenWithSource(from, to, source);
+        long starsTransactions = paymentRepository.countSucceededStarsBetweenWithSource(from, to, source);
 
         return new RangeReportDto(
                 from.toString(),
@@ -225,7 +203,7 @@ public class ReportService {
         );
     }
 
-    // ── Знаки (кредиты) ──────────────────────────────────────────────────────
+    // ── Знаки (кредиты) — не фильтруются по источнику ────────────────────────
 
     private CreditsReportDto buildCreditsSection() {
         long totalGranted = creditLogRepository.sumGranted();
@@ -234,7 +212,7 @@ public class ReportService {
         return new CreditsReportDto(
                 totalGranted,
                 totalSpent,
-                totalGranted - totalSpent,            // currentInCirculation
+                totalGranted - totalSpent,
                 creditLogRepository.sumGrantedByPayment(),
                 creditLogRepository.sumGrantedByAdmin(),
                 creditLogRepository.sumGrantedByBonus()

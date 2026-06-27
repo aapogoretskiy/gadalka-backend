@@ -65,6 +65,19 @@ public class AdminController {
             "createdAt", "lastActiveAt", "username", "firstName", "visitCount", "totalActionsCount", "totalSpent"
     );
 
+    /**
+     * GET /api/admin/sources
+     *
+     * <p>Список уникальных реферальных источников для дропдауна фильтрации.
+     * Специальный токен "__organic__" (пользователи без источника) добавляется на фронте.
+     */
+    @GetMapping("/sources")
+    public ResponseEntity<List<String>> getSources(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил список источников", adminId);
+        return ResponseEntity.ok(userRepository.findDistinctReferralSources());
+    }
+
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
     private final FortuneCreditService fortuneCreditService;
@@ -97,16 +110,20 @@ public class AdminController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
             @RequestParam(defaultValue = "false") boolean hideInactive,
+            @RequestParam(required = false) String source,
             HttpServletRequest request) {
 
+        String sourceFilter = (source != null && !source.isBlank()) ? source.trim() : null;
+
         Long adminId = (Long) request.getAttribute("adminTelegramId");
-        log.info("Admin {} запросил список пользователей: page={}, search={}, sortBy={}, sortDir={}, hideInactive={}",
+        log.info("Admin {} запросил список пользователей: page={}, search={}, sortBy={}, sortDir={}, hideInactive={}, source={}",
                 adminId,
                 page,
                 search,
                 sortBy,
                 sortDir,
-                hideInactive);
+                hideInactive,
+                sourceFilter);
 
         // Защита от произвольных имён полей
         String safeField = ALLOWED_SORT_FIELDS.contains(sortBy) ? sortBy : "createdAt";
@@ -138,29 +155,28 @@ public class AdminController {
                     PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
                     if (hideInactive) {
                         users = direction == Sort.Direction.DESC
-                                ? userRepository.findByUsernameActiveOrderByLastActiveAtDesc(trimmed, unsortedPageable)
-                                : userRepository.findByUsernameActiveOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                                ? userRepository.findByUsernameActiveOrderByLastActiveAtDesc(trimmed, sourceFilter, unsortedPageable)
+                                : userRepository.findByUsernameActiveOrderByLastActiveAtAsc(trimmed, sourceFilter, unsortedPageable);
                     } else {
                         users = direction == Sort.Direction.DESC
-                                ? userRepository.findByUsernameOrderByLastActiveAtDesc(trimmed, unsortedPageable)
-                                : userRepository.findByUsernameOrderByLastActiveAtAsc(trimmed, unsortedPageable);
+                                ? userRepository.findByUsernameOrderByLastActiveAtDesc(trimmed, sourceFilter, unsortedPageable)
+                                : userRepository.findByUsernameOrderByLastActiveAtAsc(trimmed, sourceFilter, unsortedPageable);
                     }
                 } else if (sortByTotalSpent) {
                     PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
                     if (hideInactive) {
                         users = direction == Sort.Direction.DESC
-                                ? userRepository.findByUsernameActiveOrderByTotalSpentDesc(trimmed, unsortedPageable)
-                                : userRepository.findByUsernameActiveOrderByTotalSpentAsc(trimmed, unsortedPageable);
+                                ? userRepository.findByUsernameActiveOrderByTotalSpentDesc(trimmed, sourceFilter, unsortedPageable)
+                                : userRepository.findByUsernameActiveOrderByTotalSpentAsc(trimmed, sourceFilter, unsortedPageable);
                     } else {
                         users = direction == Sort.Direction.DESC
-                                ? userRepository.findByUsernameOrderByTotalSpentDesc(trimmed, unsortedPageable)
-                                : userRepository.findByUsernameOrderByTotalSpentAsc(trimmed, unsortedPageable);
+                                ? userRepository.findByUsernameOrderByTotalSpentDesc(trimmed, sourceFilter, unsortedPageable)
+                                : userRepository.findByUsernameOrderByTotalSpentAsc(trimmed, sourceFilter, unsortedPageable);
                     }
                 } else if (hideInactive) {
-                    users = userRepository.findByUsernameContainingIgnoreCaseAndTotalActionsCountGreaterThanAndVisitCountGreaterThan(
-                            trimmed, 0, 1, pageable);
+                    users = userRepository.findByUsernameActiveWithSource(trimmed, sourceFilter, pageable);
                 } else {
-                    users = userRepository.findByUsernameContainingIgnoreCase(trimmed, pageable);
+                    users = userRepository.findByUsernameContainingIgnoreCaseWithSource(trimmed, sourceFilter, pageable);
                 }
             }
         } else {
@@ -168,28 +184,28 @@ public class AdminController {
                 PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
                 if (hideInactive) {
                     users = direction == Sort.Direction.DESC
-                            ? userRepository.findAllActiveOrderByLastActiveAtDesc(unsortedPageable)
-                            : userRepository.findAllActiveOrderByLastActiveAtAsc(unsortedPageable);
+                            ? userRepository.findAllActiveOrderByLastActiveAtDesc(sourceFilter, unsortedPageable)
+                            : userRepository.findAllActiveOrderByLastActiveAtAsc(sourceFilter, unsortedPageable);
                 } else {
                     users = direction == Sort.Direction.DESC
-                            ? userRepository.findAllOrderByLastActiveAtDesc(unsortedPageable)
-                            : userRepository.findAllOrderByLastActiveAtAsc(unsortedPageable);
+                            ? userRepository.findAllOrderByLastActiveAtDesc(sourceFilter, unsortedPageable)
+                            : userRepository.findAllOrderByLastActiveAtAsc(sourceFilter, unsortedPageable);
                 }
             } else if (sortByTotalSpent) {
                 PageRequest unsortedPageable = PageRequest.of(page, Math.min(size, 100));
                 if (hideInactive) {
                     users = direction == Sort.Direction.DESC
-                            ? userRepository.findAllActiveOrderByTotalSpentDesc(unsortedPageable)
-                            : userRepository.findAllActiveOrderByTotalSpentAsc(unsortedPageable);
+                            ? userRepository.findAllActiveOrderByTotalSpentDesc(sourceFilter, unsortedPageable)
+                            : userRepository.findAllActiveOrderByTotalSpentAsc(sourceFilter, unsortedPageable);
                 } else {
                     users = direction == Sort.Direction.DESC
-                            ? userRepository.findAllOrderByTotalSpentDesc(unsortedPageable)
-                            : userRepository.findAllOrderByTotalSpentAsc(unsortedPageable);
+                            ? userRepository.findAllOrderByTotalSpentDesc(sourceFilter, unsortedPageable)
+                            : userRepository.findAllOrderByTotalSpentAsc(sourceFilter, unsortedPageable);
                 }
             } else if (hideInactive) {
-                users = userRepository.findByTotalActionsCountGreaterThanAndVisitCountGreaterThan(0, 1, pageable);
+                users = userRepository.findActiveWithSourceFilter(sourceFilter, pageable);
             } else {
-                users = userRepository.findAll(pageable);
+                users = userRepository.findAllWithSourceFilter(sourceFilter, pageable);
             }
         }
 
@@ -587,10 +603,13 @@ public class AdminController {
      * пользователи (DAU/WAU/новые), гадания, платежи (RUB + Stars раздельно), знаки.
      */
     @GetMapping("/reports")
-    public ResponseEntity<AdminReportDto> getReports(HttpServletRequest request) {
+    public ResponseEntity<AdminReportDto> getReports(
+            @RequestParam(required = false) String source,
+            HttpServletRequest request) {
         Long adminId = (Long) request.getAttribute("adminTelegramId");
-        log.info("Admin {} запросил отчёты", adminId);
-        return ResponseEntity.ok(reportService.buildReport());
+        String sourceFilter = (source != null && !source.isBlank()) ? source.trim() : null;
+        log.info("Admin {} запросил отчёты, source={}", adminId, sourceFilter);
+        return ResponseEntity.ok(reportService.buildReport(sourceFilter));
     }
 
     /**
@@ -604,9 +623,11 @@ public class AdminController {
     public ResponseEntity<?> getRangeReport(
             @RequestParam String from,
             @RequestParam String to,
+            @RequestParam(required = false) String source,
             HttpServletRequest request) {
 
         Long adminId = (Long) request.getAttribute("adminTelegramId");
+        String sourceFilter = (source != null && !source.isBlank()) ? source.trim() : null;
 
         LocalDateTime fromDate;
         LocalDateTime toDate;
@@ -621,8 +642,8 @@ public class AdminController {
             return ResponseEntity.badRequest().body(Map.of("message", "Дата начала не может быть позже даты окончания"));
         }
 
-        log.info("Admin {} запросил отчёт за диапазон: {} — {}", adminId, fromDate, toDate);
-        return ResponseEntity.ok(reportService.buildRangeReport(fromDate, toDate));
+        log.info("Admin {} запросил отчёт за диапазон: {} — {}, source={}", adminId, fromDate, toDate, sourceFilter);
+        return ResponseEntity.ok(reportService.buildRangeReport(fromDate, toDate, sourceFilter));
     }
 
     // ══════════════════════════════════════════════════════════
@@ -767,7 +788,8 @@ public class AdminController {
                 Map.entry("premium", user.isPremium()),
                 Map.entry("visitCount", user.getVisitCount()),
                 Map.entry("totalActionsCount", user.getTotalActionsCount()),
-                Map.entry("totalSpent", spentCredits)
+                Map.entry("totalSpent", spentCredits),
+                Map.entry("referralSource", user.getReferralSource() != null ? user.getReferralSource() : "")
         );
     }
 }
