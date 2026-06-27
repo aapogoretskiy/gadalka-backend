@@ -8,17 +8,17 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
- * Конфигурация белого листа администраторов.
+ * Конфигурация белого листа администраторов и модераторов.
  *
- * <p>Список telegram_id администраторов задаётся через ENV-переменную,
+ * <p>Список telegram_id задаётся через ENV-переменные,
  * а не хранится в БД — это исключает возможность получить права
- * администратора через манипуляции с данными в базе.
+ * через манипуляции с данными в базе.
  *
- * <p>Пример в .env: ADMIN_TELEGRAM_IDS=123456789,987654321,111111111
+ * <p>Пример в .env:
+ * ADMIN_TELEGRAM_IDS=123456789,987654321
+ * ADMIN_MODERATOR_TELEGRAM_IDS=111111111,222222222
  */
 @Getter
 @Setter
@@ -27,15 +27,32 @@ import java.util.stream.Collectors;
 public class AdminProperties {
 
     /**
-     * Список Telegram ID пользователей, имеющих доступ к админ-панели.
-     * Максимум 3 человека по договорённости.
+     * Список Telegram ID пользователей, имеющих полный доступ к админ-панели.
      */
     private String telegramIds = StringUtils.EMPTY;
 
+    /**
+     * Список Telegram ID модераторов — могут просматривать все отчёты,
+     * но не могут вносить изменения (только GET-запросы).
+     */
+    private String moderatorTelegramIds = StringUtils.EMPTY;
+
     /** Проверяет, является ли указанный telegramId администратором */
     public boolean isAdmin(Long telegramId) {
-        return Arrays.stream(telegramIds.split(",")).map(Long::parseLong)
-                .toList()
-                .contains(telegramId);
+        return parseLongs(telegramIds).contains(telegramId);
+    }
+
+    /** Проверяет, является ли указанный telegramId модератором */
+    public boolean isModerator(Long telegramId) {
+        return parseLongs(moderatorTelegramIds).contains(telegramId);
+    }
+
+    private List<Long> parseLongs(String csv) {
+        if (csv == null || csv.isBlank()) return List.of();
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .map(Long::parseLong)
+                .toList();
     }
 }

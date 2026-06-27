@@ -23,8 +23,9 @@ import java.util.Arrays;
  * <p>Алгоритм проверки (двойная защита):
  * <ol>
  *   <li>Читает Admin JWT из httpOnly-куки "admin_token"</li>
- *   <li>Проверяет подпись токена и claim role=ADMIN</li>
- *   <li>Проверяет что telegramId из токена до сих пор есть в ENV-whitelist</li>
+ *   <li>Проверяет подпись токена и claim role (ADMIN или MODERATOR)</li>
+ *   <li>Проверяет что telegramId из токена до сих пор есть в соответствующем ENV-whitelist</li>
+ *   <li>Для MODERATOR: блокирует любые запросы кроме GET (модератор — только чтение)</li>
  * </ol>
  *
  * <p>Эндпоинты /api/admin/auth/** исключены — они публичны (там происходит сам вход).
@@ -54,25 +55,42 @@ public class AdminFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtService.getAdminClaims(token);
 
-            // Проверяем claim role=ADMIN
             String role = claims.get("role", String.class);
-            if (!"ADMIN".equals(role)) {
-                rejectForbidden(response, request.getRequestURI(), "Недостаточно прав");
+            Long telegramId = claims.get("telegramId", Long.class);
+
+            if ("ADMIN".equals(role)) {
+                // Полный доступ — проверяем whitelist администраторов
+                if (!adminProperties.isAdmin(telegramId)) {
+                    log.warn("Admin JWT валиден, но telegramId={} исключён из whitelist администраторов", telegramId);
+                    rejectForbidden(response, uri, "Доступ отозван");
+                    return;
+                }
+                log.debug("Admin-запрос авторизован: telegramId={}, uri={}", telegramId, uri);
+
+            } else if ("MODERATOR".equals(role)) {
+                if (!adminProperties.isModerator(telegramId)) {
+                    log.warn("Moderator JWT валиден, но telegramId={} исключён из whitelist модераторов", telegramId);
+                    rejectForbidden(response, uri, "Доступ отозван");
+                    return;
+                }
+                if (!"GET".equalsIgnoreCase(request.getMethod())) {
+                    log.warn("Модератор telegramId={} попытался выполнить {} {}", telegramId, request.getMethod(), uri);
+                    rejectForbidden(response, uri, "Недостаточно прав: модератор имеет доступ только для чтения");
+                    return;
+                }
+                log.debug("Moderator-запрос авторизован: telegramId={}, uri={}", telegramId, uri);
+
+            } else {
+                rejectForbidden(response, uri, "Недостаточно прав");
                 return;
             }
 
-            // Проверяем что telegramId всё ещё в whitelist (двойная защита)
-            Long telegramId = claims.get("telegramId", Long.class);
-            if (!adminProperties.isAdmin(telegramId)) {
-                log.warn("Admin JWT валиден, но telegramId={} исключён из whitelist", telegramId);
-                rejectForbidden(response, request.getRequestURI(), "Доступ отозван");
-                return;
-            }
-            log.debug("Admin-запрос авторизован: telegramId={}, uri={}", telegramId, uri);
             request.setAttribute("adminTelegramId", telegramId);
+            request.setAttribute("adminRole", role);
+
         } catch (Exception ex) {
             log.warn("Невалидный Admin JWT [{} {}]: {}", request.getMethod(), uri, ex.getMessage());
-            rejectUnauthorized(response, request.getRequestURI(), "Невалидный токен");
+            rejectUnauthorized(response, uri, "Невалидный токен");
             return;
         }
         filterChain.doFilter(request, response);

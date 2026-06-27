@@ -76,18 +76,26 @@ public class AdminAuthController {
                 return ResponseEntity.status(403).body(Map.of("message", "Данные авторизации устарели"));
             }
             Long telegramId = Long.parseLong(widgetData.get("id"));
-            // Проверяем whitelist
-            if (!adminProperties.isAdmin(telegramId)) {
+
+            // Проверяем whitelist: сначала администраторы, потом модераторы
+            String token;
+            String role;
+            if (adminProperties.isAdmin(telegramId)) {
+                token = jwtService.generateAdminToken(telegramId);
+                role = "ADMIN";
+            } else if (adminProperties.isModerator(telegramId)) {
+                token = jwtService.generateModeratorToken(telegramId);
+                role = "MODERATOR";
+            } else {
                 log.warn("Попытка входа в админку от неизвестного пользователя: telegramId={}", telegramId);
                 return ResponseEntity.status(403).body(Map.of("message", "Доступ запрещён"));
             }
 
-            String adminToken = jwtService.generateAdminToken(telegramId);
-            Cookie cookie = buildAdminCookie(adminToken);
+            Cookie cookie = buildAdminCookie(token);
             response.addCookie(cookie);
 
-            log.info("Успешный вход в админку: telegramId={}", telegramId);
-            return ResponseEntity.ok(Map.of("message", "Авторизация успешна"));
+            log.info("Успешный вход в панель управления: telegramId={}, role={}", telegramId, role);
+            return ResponseEntity.ok(Map.of("message", "Авторизация успешна", "role", role));
 
         } catch (Exception e) {
             log.error("Ошибка при авторизации в админке", e);
@@ -126,10 +134,19 @@ public class AdminAuthController {
         try {
             var claims = jwtService.getAdminClaims(token);
             Long telegramId = claims.get("telegramId", Long.class);
-            if (!adminProperties.isAdmin(telegramId)) {
+            String role = claims.get("role", String.class);
+
+            boolean isAdmin = "ADMIN".equals(role) && adminProperties.isAdmin(telegramId);
+            boolean isModerator = "MODERATOR".equals(role) && adminProperties.isModerator(telegramId);
+
+            if (!isAdmin && !isModerator) {
                 return ResponseEntity.status(403).body(Map.of("authenticated", false));
             }
-            return ResponseEntity.ok(Map.of("authenticated", true, "telegramId", telegramId));
+            return ResponseEntity.ok(Map.of(
+                    "authenticated", true,
+                    "telegramId", telegramId,
+                    "role", role
+            ));
         } catch (Exception e) {
             return ResponseEntity.status(401).body(Map.of("authenticated", false));
         }

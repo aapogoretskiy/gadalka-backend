@@ -57,6 +57,22 @@ public class JwtService {
     }
 
     /**
+     * Генерирует Moderator JWT для входа в админ-панель с ограниченными правами.
+     * Токен содержит claim "role"="MODERATOR" и "telegramId" для двойной проверки в AdminFilter.
+     * Модератор может только читать (GET), но не изменять данные.
+     * TTL — 8 часов.
+     */
+    public String generateModeratorToken(Long telegramId) {
+        return Jwts.builder()
+                .setSubject(telegramId.toString())
+                .addClaims(Map.of("role", "MODERATOR", "telegramId", telegramId))
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + 28800000L)) // 8 часов
+                .signWith(key)
+                .compact();
+    }
+
+    /**
      * Извлекает claims из Admin JWT.
      * Используется в AdminFilter для проверки role и telegramId.
      */
