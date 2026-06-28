@@ -131,10 +131,12 @@ public class DiaryService {
     private Object resolvePayload(User user, DiaryFeatureType featureType, Long referenceId) {
         return switch (featureType) {
             case THREE_CARD, HORSESHOE, CELTIC_CROSS -> resolveFortunePayload(user.getId(), referenceId);
-            case COMPATIBILITY   -> resolveCompatibilityPayload(user.getId(), referenceId);
-            case DAILY_CARD      -> resolveDailyCardPayload(user.getId(), referenceId);
-            case NUMEROLOGY_DAY  -> resolveNumerologyDayPayload(user.getId(), referenceId);
-            case NUMEROLOGY_WEEK -> resolveNumerologyWeekPayload(user.getId(), referenceId);
+            case COMPATIBILITY    -> resolveCompatibilityPayload(user.getId(), referenceId);
+            case DAILY_CARD       -> resolveDailyCardPayload(user.getId(), referenceId);
+            case NUMEROLOGY_DAY   -> resolveNumerologyDayPayload(user.getId(), referenceId);
+            case NUMEROLOGY_WEEK  -> resolveNumerologyWeekPayload(user.getId(), referenceId);
+            case DAILY_HOROSCOPE  -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Гороскоп на день сохраняется в дневник автоматически");
         };
     }
 

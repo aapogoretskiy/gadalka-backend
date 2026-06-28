@@ -6,9 +6,12 @@ import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
+import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationService;
+import ru.sapa.gadalka_backend.service.interpretation.HoroscopeContent;
 import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Slf4j
@@ -43,6 +46,19 @@ public class MockAiInterpretationService implements AiInterpretationService {
         return "Звёзды благосклонны к союзу " + person1 + " и " + person2 + ". " +
                "Числа судьбы говорят о глубокой внутренней связи. " +
                "Следуйте своей интуиции и доверяйте чувствам.";
+    }
+
+    @Override
+    public HoroscopeContent interpretDailyHoroscope(ZodiacSign zodiacSign, LocalDate date) {
+        String sign = zodiacSign.getDisplayName();
+        return new HoroscopeContent(
+                "Для знака " + sign + " день " + date + " пройдёт спокойно, с лёгким ощущением новых возможностей.",
+                "Доверьтесь интуиции и не откладывайте важный разговор.",
+                "В отношениях сегодня благоприятный период для откровенности.",
+                "На работе стоит сосредоточиться на одной важной задаче, не разбрасываясь.",
+                "Хороший день для обсуждения финансовых вопросов, но не для подписания документов.",
+                4, 5, 3, 4
+        );
     }
 
     @Override

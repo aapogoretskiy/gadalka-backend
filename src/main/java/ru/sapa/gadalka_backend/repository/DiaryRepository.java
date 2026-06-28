@@ -15,4 +15,17 @@ public interface DiaryRepository extends JpaRepository<DiaryEntry, Long> {
             OffsetDateTime from,
             OffsetDateTime to
     );
+
+    /**
+     * Используется гороскопом на день: контент общий на знак зодиака (а не на пользователя),
+     * поэтому перед записью в дневник нужно отдельно проверять, не сохраняли ли мы
+     * уже запись этому пользователю сегодня — иначе при каждом открытии экрана
+     * плодились бы дубликаты в истории.
+     */
+    boolean existsByUserIdAndFeatureTypeAndCreatedAtBetween(
+            Long userId,
+            DiaryFeatureType featureType,
+            OffsetDateTime from,
+            OffsetDateTime to
+    );
 }

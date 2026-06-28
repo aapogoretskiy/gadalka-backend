@@ -1,5 +1,7 @@
 package ru.sapa.gadalka_backend.service.interpretation.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.CollectionUtils;
@@ -12,9 +14,12 @@ import ru.sapa.gadalka_backend.api.dto.card.CardDto;
 import ru.sapa.gadalka_backend.api.dto.card.CardPosition;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
+import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationService;
+import ru.sapa.gadalka_backend.service.interpretation.HoroscopeContent;
 import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -39,6 +44,11 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
 
     /** Лимит токенов для интерпретации одной карты */
     private static final int MAX_TOKENS_CARD = 400;
+
+    /** Лимит токенов для гороскопа на день (5 текстовых разделов + 4 рейтинга) */
+    private static final int MAX_TOKENS_HOROSCOPE = 650;
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * @return WebClient, настроенный на конкретного провайдера (baseUrl + ключ авторизации)
@@ -96,7 +106,91 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
         );
     }
 
+    @Override
+    public HoroscopeContent interpretDailyHoroscope(ZodiacSign zodiacSign, LocalDate date) {
+        String raw = callAi(
+                buildHoroscopePrompt(zodiacSign, date),
+                "Ты мистический астролог. Составь гороскоп на день для знака зодиака строго в формате JSON " +
+                "со следующими полями, без вложенных объектов:\n" +
+                "\"general\" (строка) — общий прогноз дня, 2-3 предложения;\n" +
+                "\"advice\" (строка) — короткий совет дня, 1 предложение;\n" +
+                "\"love\" (строка) — прогноз в любви и отношениях, 1-2 предложения;\n" +
+                "\"career\" (строка) — прогноз в работе и карьере, 1-2 предложения;\n" +
+                "\"money\" (строка) — прогноз в финансах, 1-2 предложения;\n" +
+                "\"generalScore\", \"loveScore\", \"careerScore\", \"moneyScore\" (целые числа от 1 до 5) — " +
+                "насколько благоприятен день в этой сфере, по смыслу согласованные с текстом соответствующего поля.\n" +
+                "НЕ затрагивай тему здоровья ни в одном из полей. Ответ — только валидный JSON, без markdown, без пояснений, " +
+                "без обёртки в ```. Все тексты только на русском языке.",
+                MAX_TOKENS_HOROSCOPE
+        );
+        return parseHoroscopeContent(raw, zodiacSign);
+    }
+
     // -------------------------------------------------------------------------
+
+    private String buildHoroscopePrompt(ZodiacSign zodiacSign, LocalDate date) {
+        return "Знак зодиака: " + zodiacSign.getDisplayName() + ". Дата: " + date + ". " +
+               "Составь атмосферный, но не клишированный гороскоп на этот день.";
+    }
+
+    private HoroscopeContent parseHoroscopeContent(String raw, ZodiacSign zodiacSign) {
+        String cleaned = stripMarkdownFences(raw);
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(cleaned);
+            return new HoroscopeContent(
+                    textOrFallback(node, "general"),
+                    textOrFallback(node, "advice"),
+                    textOrFallback(node, "love"),
+                    textOrFallback(node, "career"),
+                    textOrFallback(node, "money"),
+                    scoreOrFallback(node, "generalScore"),
+                    scoreOrFallback(node, "loveScore"),
+                    scoreOrFallback(node, "careerScore"),
+                    scoreOrFallback(node, "moneyScore")
+            );
+        } catch (Exception ex) {
+            log.error("Не удалось распарсить JSON гороскопа для знака {}: {}. Ответ AI: {}",
+                    zodiacSign, ex.getMessage(), raw);
+            String fallback = StringUtils.isBlank(raw)
+                    ? "Звёзды сегодня немногословны — заходите чуть позже."
+                    : raw;
+            return new HoroscopeContent(fallback, fallback, fallback, fallback, fallback, 3, 3, 3, 3);
+        }
+    }
+
+    private String textOrFallback(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull() || StringUtils.isBlank(value.asText())) {
+            return "Звёзды сегодня немногословны на эту тему.";
+        }
+        return value.asText();
+    }
+
+    /** Если AI не вернул число или вернул значение вне диапазона — берём нейтральную "3" (середина шкалы 1-5). */
+    private int scoreOrFallback(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull() || !value.isNumber()) {
+            return 3;
+        }
+        int score = value.asInt();
+        if (score < 1 || score > 5) {
+            return 3;
+        }
+        return score;
+    }
+
+    /** AI иногда оборачивает JSON в ```json ... ``` несмотря на инструкцию — убираем обёртку. */
+    private String stripMarkdownFences(String raw) {
+        if (raw == null) return "";
+        String trimmed = raw.trim();
+        if (trimmed.startsWith("```")) {
+            trimmed = trimmed.replaceFirst("^```[a-zA-Z]*\\s*", "");
+            if (trimmed.endsWith("```")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 3);
+            }
+        }
+        return trimmed.trim();
+    }
 
     private String buildCompatibilityPrompt(List<CompatibilityRequest.PersonInput> persons,
                                             int overallScore,

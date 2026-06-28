@@ -7,5 +7,6 @@ public enum DiaryFeatureType {
     COMPATIBILITY,
     DAILY_CARD,
     NUMEROLOGY_DAY,
-    NUMEROLOGY_WEEK
+    NUMEROLOGY_WEEK,
+    DAILY_HOROSCOPE
 }

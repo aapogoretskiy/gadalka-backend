@@ -6,7 +6,9 @@ import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
+import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +29,11 @@ public class AiInterpretationManager {
                                          List<CompatibilityCategoryScore> categories) {
         log.debug("Интерпретация совместимости через провайдер '{}', участников: {}", provider, persons.size());
         return getService(provider).interpretCompatibility(persons, overallScore, categories);
+    }
+
+    public HoroscopeContent interpretDailyHoroscope(String provider, ZodiacSign zodiacSign, LocalDate date) {
+        log.debug("Генерация гороскопа на день через провайдер '{}', знак: {}, дата: {}", provider, zodiacSign, date);
+        return getService(provider).interpretDailyHoroscope(zodiacSign, date);
     }
 
     private AiInterpretationService getService(String provider) {
