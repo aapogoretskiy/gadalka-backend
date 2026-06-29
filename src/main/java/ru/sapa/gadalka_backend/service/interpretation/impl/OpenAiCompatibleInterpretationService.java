@@ -44,10 +44,10 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                     """;
 
     /** Лимит токенов для общей интерпретации расклада */
-    private static final int MAX_TOKENS_GENERAL = 600;
+    private static final int MAX_TOKENS_GENERAL = 900;
 
     /** Лимит токенов для интерпретации одной карты */
-    private static final int MAX_TOKENS_CARD = 400;
+    private static final int MAX_TOKENS_CARD = 550;
 
     /** Лимит токенов для гороскопа на день (5 текстовых разделов + 4 рейтинга) */
     private static final int MAX_TOKENS_HOROSCOPE = 650;
@@ -59,6 +59,14 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
      * дешевле, чем показывать пользователю вчерашний контент (см. HoroscopeGenerationException).
      */
     private static final int HOROSCOPE_MAX_ATTEMPTS = 3;
+
+    /**
+     * Сколько раз перегенерировать ответ, если AI оборвал фразу по лимиту max_tokens
+     * (finish_reason = "length"). В отличие от гороскопа (HOROSCOPE_MAX_ATTEMPTS), здесь
+     * после исчерпания попыток мы не бросаем исключение, а отдаём последнюю версию текста —
+     * лучше показать пользователю чуть обрезанный, но осмысленный ответ, чем ошибку.
+     */
+    private static final int TRUNCATION_MAX_ATTEMPTS = 2;
 
     /** Текст-заглушка для отдельного поля гороскопа, если AI не заполнил именно его. */
     private static final String FIELD_FALLBACK_TEXT = "Звёзды сегодня немногословны на эту тему.";
@@ -334,7 +342,28 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
         };
     }
 
+    /**
+     * Делает запрос к AI и при необходимости перегенерирует его, если ответ был обрезан
+     * по лимиту токенов ({@code finish_reason = "length"}) — иначе пользователь получает
+     * фразу, обрывающуюся на полуслове.
+     */
     private String callAi(String userPrompt, String systemPrompt, int maxTokens) {
+        String content = StringUtils.EMPTY;
+        for (int attempt = 1; attempt <= TRUNCATION_MAX_ATTEMPTS; attempt++) {
+            AiCallResult result = callAiRaw(userPrompt, systemPrompt, maxTokens);
+            content = result.content();
+            if (!"length".equals(result.finishReason())) {
+                return content;
+            }
+            log.warn("Ответ {} AI обрезан по лимиту токенов (попытка {}/{}, maxTokens={}) — переспрашиваем",
+                    getProvider(), attempt, TRUNCATION_MAX_ATTEMPTS, maxTokens);
+        }
+        return content;
+    }
+
+    private record AiCallResult(String content, String finishReason) {}
+
+    private AiCallResult callAiRaw(String userPrompt, String systemPrompt, int maxTokens) {
         String model = getModel();
         log.debug("Отправляем запрос к {} AI, модель='{}', maxTokens={}, промпт: {}",
                 getProvider(), model, maxTokens, userPrompt.length() > 100 ? userPrompt.substring(0, 100) + "…" : userPrompt);
@@ -362,17 +391,19 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
 
         if (response == null) {
             log.warn("{} AI вернул пустой ответ (null) для модели '{}'", getProvider(), model);
-            return StringUtils.EMPTY;
+            return new AiCallResult(StringUtils.EMPTY, null);
         }
 
         List<AiResponse.Choice> choices = response.getChoices();
         if (CollectionUtils.isEmpty(choices)) {
             log.warn("{} AI вернул ответ без вариантов (choices пуст) для модели '{}'", getProvider(), model);
-            return StringUtils.EMPTY;
+            return new AiCallResult(StringUtils.EMPTY, null);
         }
 
-        String content = choices.get(0).getMessage().getContent();
-        log.debug("Получен ответ от {} AI, длина: {} символов", getProvider(), content != null ? content.length() : 0);
-        return content;
+        AiResponse.Choice choice = choices.get(0);
+        String content = choice.getMessage().getContent();
+        log.debug("Получен ответ от {} AI, длина: {} символов, finish_reason={}",
+                getProvider(), content != null ? content.length() : 0, choice.getFinishReason());
+        return new AiCallResult(content, choice.getFinishReason());
     }
 }
