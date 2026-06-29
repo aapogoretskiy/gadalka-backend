@@ -328,6 +328,8 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
             case "work"   -> "Работа и карьера";
             case "life"   -> "Жизненная ситуация";
             case "health" -> "Здоровье";
+            case "ex"     -> "Бывшие отношения";
+            case "intimacy" -> "Секс и интимная близость";
             default       -> null;
         };
     }

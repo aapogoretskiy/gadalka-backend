@@ -19,12 +19,12 @@ public class FortuneRequest {
     private String question;
 
     /**
-     * Категория гадания. Допустимые значения: love, money, work, life, health.
+     * Категория гадания. Допустимые значения: love, money, work, life, health, ex, intimacy.
      * Может быть null — тогда интерпретация без привязки к сфере.
      */
     @Pattern(
-            regexp = "^(love|money|work|life|health)$",
-            message = "Категория должна быть одной из: love, money, work, life, health"
+            regexp = "^(love|money|work|life|health|ex|intimacy)$",
+            message = "Категория должна быть одной из: love, money, work, life, health, ex, intimacy"
     )
     private String category;
 
