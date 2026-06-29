@@ -1,5 +1,6 @@
 package ru.sapa.gadalka_backend.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import ru.sapa.gadalka_backend.domain.DiaryEntry;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
@@ -14,6 +15,18 @@ public interface DiaryRepository extends JpaRepository<DiaryEntry, Long> {
             DiaryFeatureType featureType,
             OffsetDateTime from,
             OffsetDateTime to
+    );
+
+    /**
+     * Используется админ-панелью для построения истории действий пользователя.
+     * Гороскоп на день хранится не в отдельной таблице на пользователя (контент общий
+     * на знак зодиака), а только как запись дневника — поэтому для админки это
+     * единственный источник истории по этому типу.
+     */
+    List<DiaryEntry> findByUserIdAndFeatureTypeOrderByCreatedAtDesc(
+            Long userId,
+            DiaryFeatureType featureType,
+            Pageable pageable
     );
 
     /**

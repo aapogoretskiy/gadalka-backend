@@ -1,5 +1,7 @@
 package ru.sapa.gadalka_backend.api;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,11 +24,13 @@ import ru.sapa.gadalka_backend.api.dto.feedback.TicketSummaryResponse;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 import ru.sapa.gadalka_backend.domain.*;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.FeedbackTargetType;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
 import ru.sapa.gadalka_backend.repository.ActionFeedbackRepository;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
 import ru.sapa.gadalka_backend.repository.DailyCardRepository;
+import ru.sapa.gadalka_backend.repository.DiaryRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
@@ -87,7 +91,9 @@ public class AdminController {
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
     private final DailyCardRepository dailyCardRepository;
+    private final DiaryRepository diaryRepository;
     private final ActionFeedbackRepository actionFeedbackRepository;
+    private final ObjectMapper objectMapper;
     private final GadalkaTelegramBot telegramBot;
     private final BroadcastService broadcastService;
     private final ReportService reportService;
@@ -342,6 +348,7 @@ public class AdminController {
             item.put("label",          fortuneLabel(type));
             item.put("date",           fortune.getCreatedAt().toString());
             item.put("details",        question.length() > 60 ? question.substring(0, 60) + "…" : question);
+            item.put("fullDetails",    question);
             item.put("interpretation", fortune.getInterpretation());
             item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
             item.put("feedbackComment", fb != null ? fb.getComment() : null);
@@ -428,6 +435,31 @@ public class AdminController {
             item.put("feedbackRating", null);
             item.put("feedbackComment", null);
             actions.add(item);
+        }
+
+        // ── Гороскоп на день ─────────────────────────────────────────────────
+        // Контент гороскопа общий на знак зодиака (не на пользователя), поэтому
+        // персональная история берётся из общего дневника (DiaryEntry), куда
+        // HoroscopeService сохраняет снимок при каждом первом просмотре за день.
+        for (DiaryEntry entry : diaryRepository.findByUserIdAndFeatureTypeOrderByCreatedAtDesc(id, DiaryFeatureType.DAILY_HOROSCOPE, pageable)) {
+            try {
+                JsonNode payload = objectMapper.readTree(entry.getPayload());
+                String sign = payload.path("zodiacSign").asText("—");
+                int score = payload.path("generalScore").asInt(0);
+                String general = payload.path("general").asText("");
+                var item = new java.util.LinkedHashMap<String, Object>();
+                item.put("id",             entry.getId());
+                item.put("type",           "DAILY_HOROSCOPE");
+                item.put("label",          "Гороскоп");
+                item.put("date",           entry.getCreatedAt().toString());
+                item.put("details",        sign + " — общий балл " + score + "/5");
+                item.put("interpretation", general);
+                item.put("feedbackRating", null);
+                item.put("feedbackComment", null);
+                actions.add(item);
+            } catch (Exception e) {
+                log.warn("Не удалось распарсить payload дневника гороскопа id={}", entry.getId(), e);
+            }
         }
 
         // Сортируем общий список по дате убыванию и обрезаем до limit
@@ -762,11 +794,6 @@ public class AdminController {
                 })
                 .orElse("userId=" + ticket.getUserId());
         return TicketSummaryResponse.from(ticket, userName);
-    }
-
-    /** Краткое представление пользователя для таблицы со списком (без подсчёта потраченных знаков) */
-    private Map<String, Object> toSummary(User user) {
-        return toSummary(user, 0L);
     }
 
     /**
