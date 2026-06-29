@@ -11,20 +11,14 @@ import ru.sapa.gadalka_backend.domain.DailyHoroscope;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
-import ru.sapa.gadalka_backend.repository.DailyHoroscopeRepository;
 import ru.sapa.gadalka_backend.repository.DiaryRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
-import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
-import ru.sapa.gadalka_backend.service.interpretation.HoroscopeContent;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Optional;
-
-import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER;
 
 /**
  * Гороскоп на день.
@@ -41,15 +35,13 @@ import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER
 @RequiredArgsConstructor
 public class HoroscopeService {
 
-    private static final ZoneId MOSCOW_ZONE = ZoneId.of("Europe/Moscow");
+    static final ZoneId MOSCOW_ZONE = ZoneId.of("Europe/Moscow");
 
     private final UserProfileRepository userProfileRepository;
-    private final DailyHoroscopeRepository horoscopeRepository;
     private final DiaryRepository diaryRepository;
     private final DiaryService diaryService;
     private final UserRepository userRepository;
-    private final AiInterpretationManager interpretationManager;
-    private final SystemConfigService systemConfigService;
+    private final HoroscopeGenerationService horoscopeGenerationService;
 
     @Transactional
     public DailyHoroscopeResponse getDailyHoroscope(Long userId) {
@@ -67,52 +59,12 @@ public class HoroscopeService {
         ZodiacSign zodiacSign = ZodiacSign.fromDate(profile.getBirthDate());
         LocalDate today = LocalDate.now(MOSCOW_ZONE);
 
-        DailyHoroscope horoscope = resolveHoroscope(zodiacSign, today);
+        DailyHoroscope horoscope = horoscopeGenerationService.resolveHoroscope(zodiacSign, today);
         DailyHoroscopeResponse response = toResponse(horoscope);
 
         recordDiaryEntryOnce(userId, horoscope, today);
 
         return response;
-    }
-
-    /**
-     * Возвращает актуальный гороскоп для знака, генерируя его при необходимости.
-     *
-     * <p>Сначала читаем без блокировки — это покрывает почти все запросы в течение дня,
-     * когда контент уже свежий. Если он устарел или отсутствует, переходим на
-     * {@code PESSIMISTIC_WRITE}-блокировку строки знака и перепроверяем дату ещё раз —
-     * это защищает от того, чтобы при одновременных запросах нескольких пользователей
-     * с одним знаком AI был вызван больше одного раза в сутки.
-     */
-    private DailyHoroscope resolveHoroscope(ZodiacSign zodiacSign, LocalDate today) {
-        Optional<DailyHoroscope> cached = horoscopeRepository.findByZodiacSign(zodiacSign);
-        if (cached.isPresent() && today.equals(cached.get().getDate())) {
-            return cached.get();
-        }
-
-        Optional<DailyHoroscope> locked = horoscopeRepository.findByZodiacSignForUpdate(zodiacSign);
-        if (locked.isPresent() && today.equals(locked.get().getDate())) {
-            // Другой запрос успел сгенерировать гороскоп, пока мы ждали блокировку — используем его.
-            return locked.get();
-        }
-
-        log.info("Генерируем гороскоп на день: знак={}, дата={}", zodiacSign, today);
-        String provider = systemConfigService.getValue(AI_PROVIDER);
-        HoroscopeContent content = interpretationManager.interpretDailyHoroscope(provider, zodiacSign, today);
-
-        DailyHoroscope horoscope = locked.orElseGet(() -> DailyHoroscope.builder().zodiacSign(zodiacSign).build());
-        horoscope.setDate(today);
-        horoscope.setGeneralText(content.general());
-        horoscope.setAdviceText(content.advice());
-        horoscope.setLoveText(content.love());
-        horoscope.setCareerText(content.career());
-        horoscope.setMoneyText(content.money());
-        horoscope.setGeneralScore(content.generalScore());
-        horoscope.setLoveScore(content.loveScore());
-        horoscope.setCareerScore(content.careerScore());
-        horoscope.setMoneyScore(content.moneyScore());
-
-        return horoscopeRepository.save(horoscope);
     }
 
     /**
@@ -137,6 +89,7 @@ public class HoroscopeService {
 
     private DailyHoroscopeResponse toResponse(DailyHoroscope horoscope) {
         ZodiacSign zodiacSign = horoscope.getZodiacSign();
+        boolean stale = !LocalDate.now(MOSCOW_ZONE).equals(horoscope.getDate());
         return new DailyHoroscopeResponse(
                 horoscope.getDate(),
                 zodiacSign.getDisplayName(),
@@ -152,7 +105,8 @@ public class HoroscopeService {
                 horoscope.getMoneyText(),
                 zodiacSign.getLuckyNumbers(),
                 zodiacSign.getLuckyColors(),
-                zodiacSign.getStone()
+                zodiacSign.getStone(),
+                stale
         );
     }
 }

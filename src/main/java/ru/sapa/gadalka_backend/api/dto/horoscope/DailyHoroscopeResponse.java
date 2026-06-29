@@ -18,6 +18,7 @@ public record DailyHoroscopeResponse(
         String money,
         List<Integer> luckyNumbers,
         List<String> luckyColors,
-        String stone
+        String stone,
+        boolean stale
 ) {
 }
