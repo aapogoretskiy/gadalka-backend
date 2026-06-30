@@ -51,7 +51,7 @@ public class SensitiveContentFilterService {
                             "военнопленн", "нато", "укрфронт"
                     )),
                     Map.entry(SensitiveContentCategory.DEATH_MORTALITY, Set.of(
-                            "умру", "умрет", "умреть", "умрет", "умрёт", "умереть",
+                            "умру", "умрет", "умереть",
                             "похорон", "сколько проживу", "когда умру", "доживу ли",
                             "скоро умр", "дата смерти"
                     )),
