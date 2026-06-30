@@ -75,6 +75,13 @@ payment:
   # fixedDelay: задержка между окончанием предыдущего и началом следующего запуска (мс)
   webhook:
     process-delay-ms: ${PAYMENT_WEBHOOK_PROCESS_DELAY_MS:30000}
+  # Автоотмена зависших PENDING-платежей (PendingPaymentExpiryService).
+  # Таймаут разный по провайдерам: Stars подтверждаются за секунды (нативный диалог,
+  # без ввода данных), Robokassa/ЮKassa — десятки секунд - минуты (ввод карты).
+  pending-expiry:
+    stars-timeout-minutes: ${PAYMENT_PENDING_STARS_TIMEOUT_MINUTES:5}
+    card-timeout-minutes: ${PAYMENT_PENDING_CARD_TIMEOUT_MINUTES:30}
+    check-interval-ms: ${PAYMENT_PENDING_EXPIRY_CHECK_INTERVAL_MS:300000}
 
 openrouter:
   api-key: ${OPENROUTER_API_KEY}

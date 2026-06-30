@@ -2,9 +2,11 @@ package ru.sapa.gadalka_backend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.sapa.gadalka_backend.domain.Payment;
+import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 
 import java.time.OffsetDateTime;
@@ -170,4 +172,22 @@ public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpec
             nativeQuery = true)
     Long countSucceededStarsBetweenWithSource(
             @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, @Param("source") String source);
+
+    // ── Автоотмена зависших PENDING-платежей (PendingPaymentExpiryService) ───
+
+    /**
+     * Переводит в CANCELLED все PENDING-платежи указанного провайдера старше cutoff.
+     * Таймаут разный по провайдерам — у Stars подтверждение занимает секунды
+     * (см. PendingPaymentExpiryService), поэтому метод вызывается отдельно на каждый провайдер
+     * со своим cutoff, а не одним общим запросом.
+     * <p>
+     * Bulk-UPDATE не вызывает @PreUpdate у сущности, поэтому updated_at передаём явно.
+     */
+    @Modifying
+    @Query("UPDATE Payment p SET p.status = 'CANCELLED', p.updatedAt = :now " +
+            "WHERE p.status = 'PENDING' AND p.provider = :provider AND p.createdAt < :cutoff")
+    int cancelStalePendingByProvider(
+            @Param("provider") PaymentProvider provider,
+            @Param("cutoff") OffsetDateTime cutoff,
+            @Param("now") OffsetDateTime now);
 }

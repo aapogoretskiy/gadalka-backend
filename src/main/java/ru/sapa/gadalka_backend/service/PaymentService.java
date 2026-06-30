@@ -151,6 +151,27 @@ public class PaymentService {
     }
 
     /**
+     * Отменяет платёж по сигналу FailURL — Robokassa редиректит сюда браузер пользователя,
+     * когда тот явно отказался от оплаты или она была отклонена (вызывается из PaymentController).
+     * <p>
+     * Переводит в CANCELLED только если платёж сейчас PENDING и принадлежит ожидаемому провайдеру —
+     * это защищает от гонки с ResultURL: если вебхук об успехе уже долетел и платёж SUCCEEDED,
+     * редирект FailURL (который мог прийти позже или вообще ошибочно) ничего не затирает.
+     * Несуществующий paymentId просто игнорируется — это конечная точка для браузера,
+     * 404 тут никому не нужен.
+     */
+    @Transactional
+    public void cancelIfPending(Long paymentId, PaymentProvider expectedProvider) {
+        paymentRepository.findById(paymentId).ifPresent(payment -> {
+            if (payment.getStatus() == PaymentStatus.PENDING && payment.getProvider() == expectedProvider) {
+                payment.setStatus(PaymentStatus.CANCELLED);
+                paymentRepository.save(payment);
+                log.info("Платёж отменён пользователем через FailURL: internalId={}, provider={}", paymentId, expectedProvider);
+            }
+        });
+    }
+
+    /**
      * Обрабатывает успешный Stars-платёж (вызывается из GadalkaTelegramBot).
      * providerPaymentId = telegramPaymentChargeId (уникален, используется для идемпотентности).
      */

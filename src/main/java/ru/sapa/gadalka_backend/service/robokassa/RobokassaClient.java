@@ -32,18 +32,27 @@ public class RobokassaClient {
     private final String merchantLogin;
     private final String password1;
     private final boolean testMode;
+    private final String failUrl;
 
     public RobokassaClient(
             @Value("${robokassa.merchant-login}") String merchantLogin,
             @Value("${robokassa.password1}") String password1,
-            @Value("${robokassa.test-mode:false}") boolean testMode) {
+            @Value("${robokassa.test-mode:false}") boolean testMode,
+            @Value("${telegram.bot.app-url}") String appUrl) {
 
         this.merchantLogin = merchantLogin;
         this.password1 = password1;
         this.testMode = testMode;
+        // FailURL — куда Robokassa редиректит браузер при явном отказе от оплаты.
+        // Сама Robokassa допишет к нему ?InvId=...&OutSum=... при редиректе.
+        // ВАЖНО: чтобы это реально сработало, в личном кабинете Robokassa нужно убедиться,
+        // что используется URL, переданный в запросе, а не заданный в кабинете по умолчанию
+        // (см. PaymentController#robokassaFail) — у ResultURL, например, сейчас используется
+        // именно кабинетная настройка, в форме он не передаётся вовсе.
+        String base = appUrl.endsWith("/") ? appUrl.substring(0, appUrl.length() - 1) : appUrl;
+        this.failUrl = base + "/api/v1/payments/robokassa/fail";
 
-        log.info("Robokassa клиент инициализирован (merchantLogin={}, testMode={})",
-                merchantLogin, testMode);
+        log.info("Robokassa клиент инициализирован (merchantLogin={}, testMode={}, failUrl={})", merchantLogin, testMode, failUrl);
     }
 
     /**
@@ -157,7 +166,8 @@ public class RobokassaClient {
           .append(hiddenField("InvId",          invId))
           .append(hiddenField("Description",    description))
           .append(hiddenField("Receipt",        urlEncodedReceipt))
-          .append(hiddenField("SignatureValue",  signature));
+          .append(hiddenField("SignatureValue",  signature))
+          .append(hiddenField("FailURL",         failUrl));
 
         if (testMode) {
             sb.append(hiddenField("IsTest", "1"));

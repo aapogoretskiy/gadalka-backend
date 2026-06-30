@@ -38,6 +38,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/api/v1/payments/robokassa/pay/",
             "/api/v1/payments/yookassa/webhook",
             "/api/v1/payments/robokassa/webhook",
+            "/api/v1/payments/robokassa/fail",
             "/api/admin/auth"
     };
 

@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +18,7 @@ import ru.sapa.gadalka_backend.service.PaymentWebhookAckService;
 import ru.sapa.gadalka_backend.service.ProductCatalogService;
 import ru.sapa.gadalka_backend.service.robokassa.RobokassaPageService;
 
+import java.net.URI;
 import java.util.List;
 
 @Slf4j
@@ -37,6 +39,12 @@ public class PaymentController extends BaseController {
      */
     @Value("${payment.rub-provider:robokassa}")
     private String rubProvider;
+
+    /**
+     * переиспользуем тот же параметр, что и для ЮKassa (YOOKASSA_RETURN_URL)
+     */
+    @Value("${yookassa.return-url}")
+    private String paymentReturnUrl;
 
     /**
      * GET /api/v1/payments/products
@@ -160,5 +168,34 @@ public class PaymentController extends BaseController {
 
         // Robokassa требует именно этот формат — иначе будет слать повторно
         return ResponseEntity.ok("OK" + invId);
+    }
+
+    /**
+     * GET /api/v1/payments/robokassa/fail  (FailURL)
+     * Robokassa редиректит сюда браузер пользователя, если он явно отказался от оплаты
+     * или она была отклонена. Без авторизации — это обычная браузерная навигация,
+     * а не запрос из приложения.
+     * <p>
+     * Подпись здесь не проверяем: операция только гасит зависшую PENDING-запись,
+     * кредитов не начисляет — максимум, что может сделать поддельный запрос,
+     * это отменить чужую незавершённую попытку покупки (не критично, можно купить заново).
+     * <p>
+     * После отмены отправляем пользователя обратно в бота — та же логика, что и у ЮKassa.
+     */
+    @GetMapping("/robokassa/fail")
+    public ResponseEntity<Void> robokassaFail(@RequestParam(value = "InvId", required = false) String invId) {
+        // InvId необязателен намеренно: что бы ни случилось с параметрами редиректа,
+        // пользователь должен мягко вернуться в бота, а не увидеть 500/400 в браузере —
+        // это конечная точка для чужого редиректа, который мы не полностью контролируем.
+        if (invId == null || invId.isBlank()) {
+            log.warn("Robokassa FailURL: запрос без InvId");
+        } else {
+            try {
+                paymentService.cancelIfPending(Long.parseLong(invId), PaymentProvider.ROBOKASSA);
+            } catch (NumberFormatException e) {
+                log.warn("Robokassa FailURL: некорректный InvId={}", invId);
+            }
+        }
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(paymentReturnUrl)).build();
     }
 }
