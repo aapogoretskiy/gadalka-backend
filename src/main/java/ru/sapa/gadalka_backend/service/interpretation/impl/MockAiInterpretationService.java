@@ -62,6 +62,11 @@ public class MockAiInterpretationService implements AiInterpretationService {
     }
 
     @Override
+    public String classifySensitiveContent(String question) {
+        return "LLM_REFUSED";
+    }
+
+    @Override
     public String getProvider() {
         return "mock";
     }

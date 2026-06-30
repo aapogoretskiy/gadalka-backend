@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
+import ru.sapa.gadalka_backend.api.dto.admin.SensitiveQueryLogDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
@@ -26,6 +27,7 @@ import ru.sapa.gadalka_backend.domain.*;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.FeedbackTargetType;
+import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
 import ru.sapa.gadalka_backend.repository.ActionFeedbackRepository;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
@@ -35,6 +37,7 @@ import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
+import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.BroadcastService;
@@ -100,6 +103,7 @@ public class AdminController {
     private final ReferralStatsService referralStatsService;
     private final SupportTicketService supportTicketService;
     private final FeatureCostService featureCostService;
+    private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -782,6 +786,39 @@ public class AdminController {
                         ticket.getCreditsGifted() != null ? ticket.getCreditsGifted() : 0
                 )))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * GET /api/admin/sensitive-queries?page=0&size=20&category=SELF_HARM_SUICIDE
+     *
+     * <p>Список заблокированных чувствительных запросов с пагинацией.
+     * Параметр {@code category} опционален — при отсутствии возвращаются все категории.
+     */
+    @GetMapping("/sensitive-queries")
+    public ResponseEntity<Page<SensitiveQueryLogDto>> getSensitiveQueries(
+            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил чувствительные запросы: category={}, page={}", adminId, category, page);
+
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 100));
+
+        Page<SensitiveQueryLogDto> result;
+        if (category != null && !category.isBlank()) {
+            SensitiveContentCategory cat = SensitiveContentCategory.valueOf(category.toUpperCase());
+            result = sensitiveQueryLogRepository
+                    .findByCategoryOrderByDetectedAtDesc(cat, pageable)
+                    .map(log -> SensitiveQueryLogDto.from(log, userRepository.findById(log.getUserId()).orElse(null)));
+        } else {
+            result = sensitiveQueryLogRepository
+                    .findAllByOrderByDetectedAtDesc(pageable)
+                    .map(log -> SensitiveQueryLogDto.from(log, userRepository.findById(log.getUserId()).orElse(null)));
+        }
+
+        return ResponseEntity.ok(result);
     }
 
     /** Краткое представление заявки для списка */

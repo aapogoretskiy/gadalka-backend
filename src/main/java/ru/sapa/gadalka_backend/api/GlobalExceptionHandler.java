@@ -16,6 +16,7 @@ import ru.sapa.gadalka_backend.exception.LimitExceededException;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.exception.RateLimitExceededException;
 import ru.sapa.gadalka_backend.exception.ProductNotFoundException;
+import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.exception.ThemeAlreadyOwnedException;
 import ru.sapa.gadalka_backend.exception.ThemeNotFoundException;
 
@@ -26,6 +27,17 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(SensitiveContentBlockedException.class)
+    public ResponseEntity<ErrorResponse> handleSensitiveContent(SensitiveContentBlockedException ex,
+                                                                 HttpServletRequest request) {
+        log.info("Заблокирован чувствительный запрос: uri={}", request.getRequestURI());
+        return ResponseEntity.unprocessableEntity()
+                .body(new ErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
 
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException ex,

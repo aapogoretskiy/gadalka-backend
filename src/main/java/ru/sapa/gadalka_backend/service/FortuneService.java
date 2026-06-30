@@ -14,7 +14,10 @@ import ru.sapa.gadalka_backend.domain.CardDeckTheme;
 import ru.sapa.gadalka_backend.domain.Fortune;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
+import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
+import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
+import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
 import ru.sapa.gadalka_backend.repository.CardRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
@@ -48,6 +51,7 @@ public class FortuneService {
     private final ObjectMapper objectMapper;
     private final ThemeService themeService;
     private final CardMapper cardMapper;
+    private final SensitiveContentFilterService sensitiveContentFilterService;
 
     @Transactional
     public FortuneResponse getFortune(User user, String question, String category, SpreadType spreadType) {
@@ -65,10 +69,13 @@ public class FortuneService {
             return buildResponseFromCached(user.getUsername(), cached.get(), activeTheme);
         }
 
-        // Новое гадание — списываем кредиты ДО вызова AI.
-        // Если кредитов нет → InsufficientCreditsException → AI не вызывается.
+        // Проверяем наличие кредитов ДО вызова AI — чтобы не тратить токены впустую.
+        // Само списание происходит ПОСЛЕ: только когда AI дал валидный ответ (не отказал).
         DiaryFeatureType featureType = toFeatureType(spreadType);
-        fortuneCreditService.spendCredits(user.getId(), featureType, featureCostService.getCost(spreadType));
+        int cost = featureCostService.getCost(spreadType);
+        if (!fortuneCreditService.canUseFeature(user.getId())) {
+            throw new InsufficientCreditsException();
+        }
 
         int cardCount = spreadService.getCardCount(spreadType);
         log.info("Новое гадание: userId={}, spreadType={}, категория='{}', выбираем {} карт", user.getId(), spreadType, category, cardCount);
@@ -79,6 +86,21 @@ public class FortuneService {
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
         log.debug("Запрашиваем интерпретацию у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
         InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question, category);
+
+        // Если LLM всё-таки отказал (keyword-фильтр промахнулся) — не списываем знаки, логируем
+        if (sensitiveContentFilterService.isLlmRefusal(result.getGeneralInterpretation())) {
+            SensitiveContentCategory sensitiveCategory = sensitiveContentFilterService.classifyByLlm(question);
+            try {
+                sensitiveContentFilterService.logSensitiveQuery(user.getId(), question, sensitiveCategory);
+            } catch (Exception logEx) {
+                log.error("Не удалось залогировать чувствительный запрос (LLM refusal): {}", logEx.getMessage());
+            }
+            log.info("LLM отказал на чувствительный вопрос: userId={}, category={}", user.getId(), sensitiveCategory);
+            throw new SensitiveContentBlockedException(sensitiveCategory);
+        }
+
+        // Ответ валидный — списываем знаки. Pessimistic lock внутри защищает от race condition.
+        fortuneCreditService.spendCredits(user.getId(), featureType, cost);
 
         Fortune saved = saveFortune(user.getId(), questionHash, question, spreadType, result.getCards(), result.getGeneralInterpretation());
         log.info("Гадание сохранено: fortuneId={}, userId={}, spreadType={}", saved.getId(), user.getId(), spreadType);

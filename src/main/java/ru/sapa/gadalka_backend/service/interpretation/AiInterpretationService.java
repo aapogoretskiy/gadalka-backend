@@ -28,4 +28,11 @@ public interface AiInterpretationService {
     HoroscopeContent interpretDailyHoroscope(ZodiacSign zodiacSign, LocalDate date);
 
     String getProvider();
+
+    /**
+     * Классифицирует вопрос по категории чувствительного контента.
+     * Возвращает одно слово — название значения из {@code SensitiveContentCategory}.
+     * Лёгкий вызов: ~200 входных токенов, ~10 выходных.
+     */
+    String classifySensitiveContent(String question);
 }

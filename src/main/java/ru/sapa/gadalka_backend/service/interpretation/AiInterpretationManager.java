@@ -36,6 +36,11 @@ public class AiInterpretationManager {
         return getService(provider).interpretDailyHoroscope(zodiacSign, date);
     }
 
+    public String classifySensitiveContent(String provider, String question) {
+        log.debug("Классификация чувствительного контента через провайдер '{}'", provider);
+        return getService(provider).classifySensitiveContent(question);
+    }
+
     private AiInterpretationService getService(String provider) {
         AiInterpretationService service = strategies.get(provider);
         if (service == null) {
