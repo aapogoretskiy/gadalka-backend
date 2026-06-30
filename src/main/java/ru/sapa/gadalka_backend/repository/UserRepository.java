@@ -253,4 +253,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("SELECT COALESCE(SUM(u.visitCount), 0) FROM User u WHERE u.referralSource IS NULL")
     long sumVisitCountForOrganicUsers();
+
+    /**
+     * ID пользователей, чей username содержит подстроку (без учёта регистра).
+     * Используется для фильтрации платежей по пользователю — сначала резолвим
+     * ID, затем фильтруем payments.user_id IN (...).
+     */
+    @Query("SELECT u.id FROM User u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%'))")
+    List<Long> findIdsByUsernameContainingIgnoreCase(@Param("username") String username);
 }

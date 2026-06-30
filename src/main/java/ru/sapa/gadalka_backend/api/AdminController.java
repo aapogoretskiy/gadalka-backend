@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.SensitiveQueryLogDto;
+import ru.sapa.gadalka_backend.api.dto.admin.payment.TransactionDetailsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketResponse;
@@ -27,6 +28,8 @@ import ru.sapa.gadalka_backend.domain.*;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.FeedbackTargetType;
+import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
+import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
 import ru.sapa.gadalka_backend.repository.ActionFeedbackRepository;
@@ -40,6 +43,7 @@ import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
 import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
+import ru.sapa.gadalka_backend.service.AdminPaymentService;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FeatureCostService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
@@ -48,6 +52,8 @@ import ru.sapa.gadalka_backend.service.ReferralStatsService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -104,6 +110,7 @@ public class AdminController {
     private final SupportTicketService supportTicketService;
     private final FeatureCostService featureCostService;
     private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
+    private final AdminPaymentService adminPaymentService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -819,6 +826,90 @@ public class AdminController {
         }
 
         return ResponseEntity.ok(result);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  ТРАНЗАКЦИИ (покупки знаков)
+    // ══════════════════════════════════════════════════════════
+    // Доступ только для роли ADMIN (не MODERATOR) — это финансовые данные,
+    // в отличие от остальных GET-эндпоинтов вкладок, AdminFilter их не ограничивает
+    // автоматически (модератору разрешён любой GET), поэтому проверяем роль явно.
+
+    /**
+     * GET /api/admin/payments?page=&size=&status=&provider=&search=&from=&to=
+     *
+     * <p>Список транзакций покупки знаков с пагинацией и опциональными фильтрами:
+     * статус (PENDING/SUCCEEDED/FAILED/CANCELLED), провайдер (YOOKASSA/ROBOKASSA/TELEGRAM_STARS),
+     * поиск по пользователю (telegram_id точно или username частично, как во вкладке "Пользователи"),
+     * диапазон дат создания (формат YYYY-MM-DDTHH:mm:ss, московское время).
+     */
+    @GetMapping("/payments")
+    public ResponseEntity<?> getTransactions(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String provider,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        if (!isFullAdmin(request)) {
+            log.warn("telegramId={} (роль не ADMIN) попытался получить список транзакций", adminId);
+            return ResponseEntity.status(403).body(Map.of("message", "Транзакции доступны только администраторам"));
+        }
+
+        PaymentStatus statusFilter = (status != null && !status.isBlank())
+                ? PaymentStatus.valueOf(status.toUpperCase()) : null;
+        PaymentProvider providerFilter = (provider != null && !provider.isBlank())
+                ? PaymentProvider.valueOf(provider.toUpperCase()) : null;
+
+        OffsetDateTime fromDate;
+        OffsetDateTime toDate;
+        try {
+            fromDate = parseMoscowBoundary(from);
+            toDate = parseMoscowBoundary(to);
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Некорректный формат даты. Используйте YYYY-MM-DDTHH:mm:ss"));
+        }
+
+        log.info("Admin {} запросил список транзакций: status={}, provider={}, search={}, from={}, to={}, page={}",
+                adminId, statusFilter, providerFilter, search, from, to, page);
+
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(adminPaymentService.listTransactions(
+                statusFilter, providerFilter, search, fromDate, toDate, pageable));
+    }
+
+    /**
+     * GET /api/admin/payments/{id}
+     *
+     * <p>Детальная карточка транзакции: данные платежа + сопоставленный webhook-лог
+     * (статус обработки, текст ошибки, сырой payload), если его удалось найти.
+     */
+    @GetMapping("/payments/{id}")
+    public ResponseEntity<?> getTransaction(@PathVariable Long id, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        if (!isFullAdmin(request)) {
+            log.warn("telegramId={} (роль не ADMIN) попытался получить детали транзакции id={}", adminId, id);
+            return ResponseEntity.status(403).body(Map.of("message", "Транзакции доступны только администраторам"));
+        }
+
+        log.info("Admin {} запросил детали транзакции id={}", adminId, id);
+
+        Optional<TransactionDetailsDto> details = adminPaymentService.getTransactionDetails(id);
+        return details.<ResponseEntity<?>>map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    }
+
+    private boolean isFullAdmin(HttpServletRequest request) {
+        return "ADMIN".equals(request.getAttribute("adminRole"));
+    }
+
+    /** YYYY-MM-DDTHH:mm:ss (московское время) → OffsetDateTime. null/пусто → null (фильтр отключён). */
+    private OffsetDateTime parseMoscowBoundary(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        return LocalDateTime.parse(iso).atZone(ZoneId.of("Europe/Moscow")).toOffsetDateTime();
     }
 
     /** Краткое представление заявки для списка */

@@ -1,6 +1,7 @@
 package ru.sapa.gadalka_backend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.sapa.gadalka_backend.domain.Payment;
@@ -10,7 +11,14 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
-public interface PaymentRepository extends JpaRepository<Payment, Long> {
+/**
+ * {@code JpaSpecificationExecutor} подключён ради вкладки "Транзакции" в админке:
+ * там до 4 независимых опциональных фильтров (статус, провайдер, пользователь, диапазон дат),
+ * которые нужно комбинировать в любом сочетании. Через Specification это собирается
+ * декларативно в {@code AdminPaymentService}, без необходимости городить отдельный
+ * @Query на каждую комбинацию фильтров, как сделано для отчётов ниже.
+ */
+public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpecificationExecutor<Payment> {
 
     Optional<Payment> findByProviderPaymentId(String providerPaymentId);
     List<Payment> findAllByUserIdOrderByCreatedAtDesc(Long userId);
