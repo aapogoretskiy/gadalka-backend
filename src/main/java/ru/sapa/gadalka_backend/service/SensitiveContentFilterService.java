@@ -44,11 +44,19 @@ public class SensitiveContentFilterService {
     // Нормализованные корни (будут нормализованы вместе с текстом пользователя).
     // LEGAL_FINANCIAL_ADVICE и LLM_REFUSED — контекстуальные, без keyword-фильтра.
 
+    // Аббревиатуры и короткие слова, которые ищем ТОЛЬКО как отдельное слово.
+    // Важно: "сво" как подстрока ложно матчит "своих", "своего", "свое" и т.д.,
+    // поэтому вынесено сюда с проверкой по точному совпадению токена.
+    private static final Map<SensitiveContentCategory, Set<String>> KEYWORD_EXACT_WORDS =
+            Map.of(
+                    SensitiveContentCategory.MILITARY_CONFLICT, Set.of("сво", "нато")
+            );
+
     private static final Map<SensitiveContentCategory, Set<String>> KEYWORD_ROOTS =
             Map.ofEntries(
                     Map.entry(SensitiveContentCategory.MILITARY_CONFLICT, Set.of(
-                            "спецоперац", "сво", "донбас", "луганск", "мобилиз",
-                            "военнопленн", "нато", "укрфронт"
+                            "спецоперац", "донбас", "луганск", "мобилиз",
+                            "военнопленн", "укрфронт"
                     )),
                     Map.entry(SensitiveContentCategory.DEATH_MORTALITY, Set.of(
                             "умру", "умрет", "умереть",
@@ -96,6 +104,10 @@ public class SensitiveContentFilterService {
     /**
      * Проверяет вопрос по ключевым корням — до вызова LLM, бесплатно.
      *
+     * <p>Сначала проверяет аббревиатуры/короткие слова из {@code KEYWORD_EXACT_WORDS}
+     * по точному совпадению токена (чтобы "сво" не матчило "своих").
+     * Затем проверяет корни из {@code KEYWORD_ROOTS} по вхождению подстроки.
+     *
      * @return категория чувствительного контента, либо empty если вопрос безопасен
      */
     public Optional<SensitiveContentCategory> detectByKeywords(String question) {
@@ -103,10 +115,21 @@ public class SensitiveContentFilterService {
 
         String normalized = normalize(question);
 
+        // Уровень 1а: точное совпадение токена (аббревиатуры)
+        for (Map.Entry<SensitiveContentCategory, Set<String>> entry : KEYWORD_EXACT_WORDS.entrySet()) {
+            for (String word : entry.getValue()) {
+                if (containsExactWord(normalized, normalize(word))) {
+                    log.info("Keyword-фильтр (точное слово): '{}', категория={}", word, entry.getKey());
+                    return Optional.of(entry.getKey());
+                }
+            }
+        }
+
+        // Уровень 1б: вхождение корня/подстроки
         for (Map.Entry<SensitiveContentCategory, Set<String>> entry : KEYWORD_ROOTS.entrySet()) {
             for (String root : entry.getValue()) {
                 if (normalized.contains(normalize(root))) {
-                    log.info("Keyword-фильтр: найден корень '{}', категория={}", root, entry.getKey());
+                    log.info("Keyword-фильтр (корень): '{}', категория={}", root, entry.getKey());
                     return Optional.of(entry.getKey());
                 }
             }
@@ -162,6 +185,17 @@ public class SensitiveContentFilterService {
                 .category(category)
                 .build());
         log.info("Залогирован чувствительный запрос: userId={}, category={}", userId, category);
+    }
+
+    /**
+     * Проверяет, содержит ли нормализованный текст слово {@code word} как отдельный токен.
+     * Токены разделяются пробелами (текст уже нормализован, знаки препинания удалены).
+     */
+    private boolean containsExactWord(String normalizedText, String word) {
+        for (String token : normalizedText.split(" +")) {
+            if (token.equals(word)) return true;
+        }
+        return false;
     }
 
     private String normalize(String text) {
