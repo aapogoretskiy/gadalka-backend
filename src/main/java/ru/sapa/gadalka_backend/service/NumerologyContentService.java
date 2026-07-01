@@ -71,6 +71,34 @@ public class NumerologyContentService {
         return energyOfDay(lifePathNumber);
     }
 
+    // ── Портрет личности ──────────────────────────────────────────────────────
+
+    /** Полное описание числа жизни для портрета (2-3 предложения). */
+    public String portraitLifePathDescription(int number) {
+        return textOrNull(numberNode(number), "lifePathDescription");
+    }
+
+    /** Короткое описание числа для карточек числа души / имени / дня рождения. */
+    public String portraitShortDescription(int number) {
+        return textOrNull(numberNode(number), "shortDescription");
+    }
+
+    public String portraitStrengths(int number) {
+        return textOrNull(numberNode(number), "strengths");
+    }
+
+    public String portraitGrowthPoints(int number) {
+        return textOrNull(numberNode(number), "growthPoints");
+    }
+
+    public String portraitCalling(int number) {
+        return textOrNull(numberNode(number), "calling");
+    }
+
+    public String portraitFamousPeople(int number) {
+        return textOrNull(numberNode(number), "famousPeople");
+    }
+
     public String monthlyAstroEvent(int month) {
         JsonNode node = monthlyAstroNode.get(String.valueOf(month));
         return node != null ? node.asText() : "";

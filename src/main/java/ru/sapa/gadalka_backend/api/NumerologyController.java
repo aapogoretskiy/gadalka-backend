@@ -5,13 +5,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import ru.sapa.gadalka_backend.api.dto.profile.UpdateProfileRequest;
+import ru.sapa.gadalka_backend.service.UserProfileService;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyDayResponse;
+import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyPortraitResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
 import ru.sapa.gadalka_backend.service.NumerologyDayService;
+import ru.sapa.gadalka_backend.service.NumerologyPortraitService;
 import ru.sapa.gadalka_backend.service.NumerologyWeekService;
 
 @RestController
@@ -22,6 +24,8 @@ public class NumerologyController extends BaseController {
 
     private final NumerologyDayService numerologyDayService;
     private final NumerologyWeekService numerologyWeekService;
+    private final NumerologyPortraitService numerologyPortraitService;
+    private final UserProfileService userProfileService;
 
     @GetMapping("/today")
     public NumerologyDayResponse getToday(HttpServletRequest request) {
@@ -39,6 +43,34 @@ public class NumerologyController extends BaseController {
                     """)
     public NumerologyWeekResponse getWeek(HttpServletRequest request) {
         return numerologyWeekService.getWeek(resolveUser(request).getId());
+    }
+
+    @GetMapping("/portrait")
+    @Operation(
+            summary = "Нумерологический портрет личности",
+            description = """
+                    Возвращает все постоянные числа пользователя: число жизни, число дня рождения,
+                    число души и число имени. Расчёт числа души и числа имени выполняется по имени
+                    из профиля (numerologyName), если оно задано, иначе — по имени из Telegram.
+                    Поле nameSource: "custom" — использовано пользовательское имя, "telegram" — TG-имя.
+                    Требует наличия даты рождения (422, если отсутствует).
+                    """)
+    public NumerologyPortraitResponse getPortrait(HttpServletRequest request) {
+        return numerologyPortraitService.getPortrait(resolveUser(request).getId());
+    }
+
+    @PatchMapping("/portrait/name")
+    @Operation(
+            summary = "Сохранить имя для нумерологического портрета",
+            description = """
+                    Сохраняет пользовательское имя для расчёта числа души и числа имени.
+                    Передайте пустую строку, чтобы сбросить имя (вернётся к TG-имени).
+                    """)
+    public void savePortraitName(HttpServletRequest request, @RequestParam String name) {
+        userProfileService.updateProfile(
+                resolveUser(request).getId(),
+                new UpdateProfileRequest(null, null, null, null, null, name)
+        );
     }
 
     @GetMapping("/week/current")

@@ -16,6 +16,7 @@ public record UpdateProfileRequest(
         LocalTime birthTime,
         String birthCity,
         Set<Goal> goals,
-        NotificationTime notificationTime
+        NotificationTime notificationTime,
+        String numerologyName
 ) {
 }

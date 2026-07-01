@@ -82,6 +82,9 @@ public class UserProfileService {
         if (request.notificationTime() != null) {
             userProfile.setNotificationTime(request.notificationTime());
         }
+        if (request.numerologyName() != null) {
+            userProfile.setNumerologyName(request.numerologyName().isBlank() ? null : request.numerologyName().trim());
+        }
 
         userProfileRepository.save(userProfile);
         return map(userProfile);

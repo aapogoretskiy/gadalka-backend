@@ -75,6 +75,36 @@ public class NumerologyService {
     private static final String RUSSIAN_VOWELS = "аеёиоуыэюя";
     private static final String LATIN_VOWELS   = "aeiouy";
 
+    /**
+     * Таблица гласных для числа души (Soul Urge Number) по нумерологической системе портрета.
+     * Отличается от пифагорейской — используется только для расчёта портрета.
+     */
+    private static final Map<Character, Integer> SOUL_VOWEL_VALUES = Map.of(
+        'а', 1, 'и', 1,
+        'е', 2, 'й', 2,
+        'у', 3,
+        'э', 4,
+        'ю', 5,
+        'ё', 6, 'я', 6,
+        'о', 7
+    );
+
+    /**
+     * Таблица всех букв для числа имени (Expression Number) по нумерологической системе портрета.
+     * Отличается от пифагорейской — используется только для расчёта портрета.
+     */
+    private static final Map<Character, Integer> NAME_VALUES = Map.ofEntries(
+        Map.entry('а', 1), Map.entry('и', 1), Map.entry('с', 1), Map.entry('ъ', 1),
+        Map.entry('б', 2), Map.entry('й', 2), Map.entry('т', 2), Map.entry('ы', 2),
+        Map.entry('в', 3), Map.entry('к', 3), Map.entry('у', 3), Map.entry('ь', 3),
+        Map.entry('г', 4), Map.entry('л', 4), Map.entry('ф', 4), Map.entry('э', 4),
+        Map.entry('д', 5), Map.entry('м', 5), Map.entry('х', 5), Map.entry('ю', 5),
+        Map.entry('е', 6), Map.entry('н', 6), Map.entry('ц', 6), Map.entry('я', 6),
+        Map.entry('ё', 7), Map.entry('о', 7), Map.entry('ч', 7),
+        Map.entry('ж', 8), Map.entry('п', 8), Map.entry('ш', 8),
+        Map.entry('з', 9), Map.entry('р', 9), Map.entry('щ', 9)
+    );
+
     // -------------------------------------------------------------------------
 
     public NumerologyCompatibilityResult calculate(
@@ -295,5 +325,41 @@ public class NumerologyService {
             n = sumDigits(n);
         }
         return Math.max(1, n);
+    }
+
+    // ── Портрет личности ──────────────────────────────────────────────────────
+
+    /**
+     * Число дня рождения: только цифры числа дня (не полная дата).
+     * Например, родился 15-го → 1+5=6; родился 3-го → 3.
+     */
+    public int birthdayNumber(LocalDate birthDate) {
+        return reduce(birthDate.getDayOfMonth());
+    }
+
+    /**
+     * Число души для портрета (Soul Urge Number).
+     * Считается по гласным имени с использованием нумерологической таблицы портрета.
+     * Не путать с {@link #soulNumber(String)}, который использует пифагорейский маппинг для совместимости.
+     */
+    public int portraitSoulNumber(String name) {
+        int sum = name.toLowerCase().chars()
+            .mapToObj(c -> (char) c)
+            .mapToInt(c -> SOUL_VOWEL_VALUES.getOrDefault(c, 0))
+            .sum();
+        return reduce(Math.max(1, sum));
+    }
+
+    /**
+     * Число имени для портрета (Expression Number).
+     * Считается по всем буквам имени с использованием нумерологической таблицы портрета.
+     * Не путать с {@link #destinyNumber(String)}, который использует пифагорейский маппинг для совместимости.
+     */
+    public int portraitNameNumber(String name) {
+        int sum = name.toLowerCase().chars()
+            .mapToObj(c -> (char) c)
+            .mapToInt(c -> NAME_VALUES.getOrDefault(c, 0))
+            .sum();
+        return reduce(Math.max(1, sum));
     }
 }

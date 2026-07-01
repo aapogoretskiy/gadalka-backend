@@ -46,4 +46,8 @@ public class UserProfile {
     @Column(name = "notification_time", nullable = false)
     @Builder.Default
     private NotificationTime notificationTime = NotificationTime.EVENING;
+
+    /** Имя для нумерологического портрета (число души и число имени). Необязательное. */
+    @Column(name = "numerology_name", length = 100)
+    private String numerologyName;
 }
