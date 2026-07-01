@@ -345,7 +345,12 @@ public class NumerologyService {
     public int portraitSoulNumber(String name) {
         int sum = name.toLowerCase().chars()
             .mapToObj(c -> (char) c)
-            .mapToInt(c -> SOUL_VOWEL_VALUES.getOrDefault(c, 0))
+            .mapToInt(c -> {
+                // Русские гласные — портретная таблица; латинские гласные — пифагорейский fallback
+                int v = SOUL_VOWEL_VALUES.getOrDefault(c, 0);
+                if (v == 0 && LATIN_VOWELS.indexOf(c) >= 0) v = LATIN_VALUES.getOrDefault(c, 0);
+                return v;
+            })
             .sum();
         return reduce(Math.max(1, sum));
     }
@@ -358,7 +363,12 @@ public class NumerologyService {
     public int portraitNameNumber(String name) {
         int sum = name.toLowerCase().chars()
             .mapToObj(c -> (char) c)
-            .mapToInt(c -> NAME_VALUES.getOrDefault(c, 0))
+            .mapToInt(c -> {
+                // Русские буквы — портретная таблица; латинские — пифагорейский fallback
+                int v = NAME_VALUES.getOrDefault(c, 0);
+                if (v == 0) v = LATIN_VALUES.getOrDefault(c, 0);
+                return v;
+            })
             .sum();
         return reduce(Math.max(1, sum));
     }
