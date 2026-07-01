@@ -283,10 +283,13 @@ public class AdminController {
             } catch (NumberFormatException ignored) { }
         }
 
-        // Дата рождения из профиля (для отображения возраста в панели)
+        // Дата рождения и имя для нумерологии из профиля
         var profileOpt = userProfileRepository.findByUserId(user.getId());
         String birthDate = profileOpt.filter(p -> p.getBirthDate() != null)
                 .map(p -> p.getBirthDate().toString())
+                .orElse(StringUtils.EMPTY);
+        String numerologyName = profileOpt
+                .map(p -> p.getNumerologyName() != null ? p.getNumerologyName() : StringUtils.EMPTY)
                 .orElse(StringUtils.EMPTY);
 
         return ResponseEntity.ok(Map.ofEntries(
@@ -301,6 +304,7 @@ public class AdminController {
                 Map.entry("premium", user.isPremium()),
                 Map.entry("visitCount", user.getVisitCount()),
                 Map.entry("birthDate", birthDate),
+                Map.entry("numerologyName", numerologyName),
                 Map.entry("referralSource", referralSource),
                 Map.entry("referrerName", referrerName),
                 Map.entry("balance", balance),
@@ -446,6 +450,40 @@ public class AdminController {
             item.put("feedbackRating", null);
             item.put("feedbackComment", null);
             actions.add(item);
+        }
+
+        // ── Нумерологический портрет личности ───────────────────────────────────
+        for (DiaryEntry entry : diaryRepository.findByUserIdAndFeatureTypeOrderByCreatedAtDesc(id, DiaryFeatureType.NUMEROLOGY_PORTRAIT, pageable)) {
+            try {
+                JsonNode payload = objectMapper.readTree(entry.getPayload());
+                String event = payload.path("event").asText("firstView");
+                String details;
+                if ("nameChanged".equals(event)) {
+                    String from = payload.path("from").asText("");
+                    String to   = payload.path("to").asText("");
+                    details = from.isBlank()
+                            ? "Имя для нумерологии: " + to
+                            : "Имя изменено: " + from + " → " + to;
+                } else {
+                    String nameUsed   = payload.path("nameUsed").asText("");
+                    String nameSource = payload.path("nameSource").asText("");
+                    details = "telegram".equals(nameSource)
+                            ? "Первый просмотр портрета (имя из Telegram: " + nameUsed + ")"
+                            : "Первый просмотр портрета (своё имя: " + nameUsed + ")";
+                }
+                var item = new java.util.LinkedHashMap<String, Object>();
+                item.put("id",              entry.getId());
+                item.put("type",            "NUMEROLOGY_PORTRAIT");
+                item.put("label",           "Портрет личности");
+                item.put("date",            entry.getCreatedAt().toString());
+                item.put("details",         details);
+                item.put("interpretation",  null);
+                item.put("feedbackRating",  null);
+                item.put("feedbackComment", null);
+                actions.add(item);
+            } catch (Exception e) {
+                log.warn("Не удалось распарсить payload портрета id={}", entry.getId(), e);
+            }
         }
 
         // ── Гороскоп на день ─────────────────────────────────────────────────

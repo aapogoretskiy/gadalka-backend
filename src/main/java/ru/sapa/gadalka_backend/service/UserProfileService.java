@@ -1,26 +1,36 @@
 package ru.sapa.gadalka_backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.profile.CreateProfileRequest;
 import ru.sapa.gadalka_backend.api.dto.profile.ProfileResponse;
 import ru.sapa.gadalka_backend.api.dto.profile.UpdateProfileRequest;
+import ru.sapa.gadalka_backend.domain.DiaryEntry;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.UserProfile;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.NotificationTime;
+import ru.sapa.gadalka_backend.repository.DiaryRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserProfileService {
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
+    private final DiaryRepository diaryRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public ProfileResponse getProfile(Long userId) {
@@ -83,7 +93,28 @@ public class UserProfileService {
             userProfile.setNotificationTime(request.notificationTime());
         }
         if (request.numerologyName() != null) {
-            userProfile.setNumerologyName(request.numerologyName().isBlank() ? null : request.numerologyName().trim());
+            String oldName = userProfile.getNumerologyName();
+            String newName = request.numerologyName().isBlank() ? null : request.numerologyName().trim();
+
+            // Фиксируем в истории любое изменение имени (null→имя, имя→другое имя)
+            if (!Objects.equals(oldName, newName) && newName != null) {
+                try {
+                    String payload = objectMapper.writeValueAsString(Map.of(
+                            "event",  "nameChanged",
+                            "from",   oldName != null ? oldName : "",
+                            "to",     newName
+                    ));
+                    diaryRepository.save(DiaryEntry.builder()
+                            .userId(userId)
+                            .featureType(DiaryFeatureType.NUMEROLOGY_PORTRAIT)
+                            .payload(payload)
+                            .build());
+                } catch (Exception e) {
+                    log.warn("Не удалось сохранить DiaryEntry смены имени userId={}: {}", userId, e.getMessage());
+                }
+            }
+
+            userProfile.setNumerologyName(newName);
         }
 
         userProfileRepository.save(userProfile);

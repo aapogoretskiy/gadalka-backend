@@ -41,4 +41,10 @@ public interface DiaryRepository extends JpaRepository<DiaryEntry, Long> {
             OffsetDateTime from,
             OffsetDateTime to
     );
+
+    /**
+     * Проверяет, существует ли хотя бы одна запись данного типа для пользователя.
+     * Используется для определения первого открытия нумерологического портрета.
+     */
+    boolean existsByUserIdAndFeatureType(Long userId, DiaryFeatureType featureType);
 }
