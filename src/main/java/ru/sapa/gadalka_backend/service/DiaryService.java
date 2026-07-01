@@ -137,6 +137,8 @@ public class DiaryService {
             case NUMEROLOGY_WEEK  -> resolveNumerologyWeekPayload(user.getId(), referenceId);
             case DAILY_HOROSCOPE  -> throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Гороскоп на день сохраняется в дневник автоматически");
+            case NUMEROLOGY_PORTRAIT -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Портрет личности сохраняется в дневник автоматически");
         };
     }
 
