@@ -78,6 +78,15 @@ public class AdminController {
             "createdAt", "lastActiveAt", "username", "firstName", "visitCount", "totalActionsCount", "totalSpent"
     );
 
+    /** Именованный сегмент рассылки: «нулевые» пользователи без единого действия */
+    private static final String SEGMENT_INACTIVE = "INACTIVE";
+
+    /**
+     * Минимальный возраст регистрации для попадания в сегмент INACTIVE (дни).
+     * Свежих пользователей не трогаем — они ещё могут дойти до первого действия сами.
+     */
+    private static final int INACTIVE_SEGMENT_MIN_AGE_DAYS = 2;
+
     /**
      * GET /api/admin/sources
      *
@@ -622,22 +631,50 @@ public class AdminController {
         byte[] photoBytes = (photo != null && !photo.isEmpty()) ? photo.getBytes() : null;
         String photoFileName = (photo != null && !photo.isEmpty()) ? photo.getOriginalFilename() : null;
 
-        boolean toAdmins = Boolean.TRUE.equals(body.onlyAdmins());
-        boolean toSelected = body.userIds() != null && !body.userIds().isEmpty();
+        // Резолв сегмента в конкретные userIds — дальше работает существующий
+        // механизм BroadcastService без изменений.
+        // Приоритет аудитории: userIds > segment > onlyAdmins > все пользователи.
+        List<Long> userIds = body.userIds();
+        boolean bySegment = (userIds == null || userIds.isEmpty()) && SEGMENT_INACTIVE.equals(body.segment());
+        if (bySegment) {
+            userIds = userRepository.findInactiveUserIds(OffsetDateTime.now().minusDays(INACTIVE_SEGMENT_MIN_AGE_DAYS));
+            if (userIds.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "В сегменте «неактивированные» нет получателей"));
+            }
+        }
+
+        boolean toAdmins = (userIds == null || userIds.isEmpty()) && Boolean.TRUE.equals(body.onlyAdmins());
+        boolean toSelected = userIds != null && !userIds.isEmpty();
         boolean toAll = !toAdmins && !toSelected;
 
-        log.info("Admin {} запустил рассылку: toAll={}, toAdmins={}, toSelected={}, giftAmount={}, hasPhoto={}",
+        log.info("Admin {} запустил рассылку: toAll={}, toAdmins={}, toSelected={}, segment={}, giftAmount={}, hasPhoto={}",
                 adminId,
                 toAll,
                 toAdmins,
-                toSelected ? body.userIds().size() : 0,
+                toSelected ? userIds.size() : 0,
+                bySegment ? body.segment() : null,
                 body.giftAmount(),
                 photoBytes != null);
 
-        broadcastService.broadcast(body.message(), body.giftAmount(), body.userIds(), photoBytes, photoFileName, toAdmins);
+        broadcastService.broadcast(body.message(), body.giftAmount(), userIds, photoBytes, photoFileName, toAdmins);
 
-        String info = toAdmins ? "администраторам" : toSelected ? "выбранным (" + body.userIds().size() + ")" : "всем пользователям";
+        String info = toAdmins ? "администраторам"
+                : bySegment ? "неактивированным (" + userIds.size() + ")"
+                : toSelected ? "выбранным (" + userIds.size() + ")"
+                : "всем пользователям";
         return ResponseEntity.ok(Map.of("message", "Рассылка запущена " + info));
+    }
+
+    /**
+     * GET /api/admin/broadcast/segments
+     *
+     * <p>Счётчики именованных сегментов аудитории — чтобы админка показывала
+     * число получателей на кнопке выбора аудитории до запуска рассылки.
+     */
+    @GetMapping("/broadcast/segments")
+    public ResponseEntity<?> getBroadcastSegments() {
+        long inactive = userRepository.countInactiveUsers(OffsetDateTime.now().minusDays(INACTIVE_SEGMENT_MIN_AGE_DAYS));
+        return ResponseEntity.ok(Map.of("inactive", inactive));
     }
 
     /**
@@ -674,8 +711,10 @@ public class AdminController {
      * Фото передаётся отдельной частью "photo", а не через это DTO.
      *
      * @param onlyAdmins если true — рассылка только администраторам из ADMIN_TELEGRAM_IDS
+     * @param segment    именованный сегмент аудитории (пока только INACTIVE — «нулевые»
+     *                   пользователи без единого действия); резолвится в userIds на бэке
      */
-    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, Boolean onlyAdmins) {}
+    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, Boolean onlyAdmins, String segment) {}
 
     /**
      * GET /api/admin/reports

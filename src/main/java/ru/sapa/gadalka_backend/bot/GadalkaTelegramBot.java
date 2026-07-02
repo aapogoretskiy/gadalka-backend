@@ -192,6 +192,50 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
+     * Отправляет напоминание о брошенной оплате с кнопкой, открывающей Mini App
+     * сразу на экране оплаты. Вызывается из {@link ru.sapa.gadalka_backend.service.PaymentRecoveryService}.
+     * <p>
+     * Кнопка ведёт на {@code appUrl?screen=pay} — фронтенд при инициализации читает
+     * query-параметр {@code screen} и роутит пользователя на PaymentScreen (см. App.vue).
+     *
+     * @param telegramId Telegram ID получателя
+     * @param text       готовый текст напоминания (Markdown)
+     * @return true — сообщение отправлено; false — Telegram отклонил отправку
+     *         (например, пользователь заблокировал бота)
+     */
+    public boolean sendPaymentRecoveryMessage(Long telegramId, String text) {
+        String payUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=pay";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("💳 Оплатить картой")
+                .webApp(new WebAppInfo(payUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Напоминание о брошенной оплате отправлено: telegramId={}", telegramId);
+            return true;
+        } catch (TelegramApiException e) {
+            // Не критично: пользователь мог заблокировать бота. Платёж всё равно
+            // помечается как "напоминание отправлено", чтобы не долбить повторно.
+            log.warn("Не удалось отправить напоминание об оплате: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Отправляет рефереру уведомление о том, что его друг зарегистрировался.
      * Вызывается из {@link ru.sapa.gadalka_backend.service.ReferralService}.
      *

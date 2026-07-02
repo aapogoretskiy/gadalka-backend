@@ -82,6 +82,16 @@ payment:
     stars-timeout-minutes: ${PAYMENT_PENDING_STARS_TIMEOUT_MINUTES:5}
     card-timeout-minutes: ${PAYMENT_PENDING_CARD_TIMEOUT_MINUTES:30}
     check-interval-ms: ${PAYMENT_PENDING_EXPIRY_CHECK_INTERVAL_MS:300000}
+  # Догоняющие напоминания о брошенной оплате (PaymentRecoveryService).
+  # Окно возраста платежа: [min-age, max-age] минут — снизу не дёргаем тех, кто
+  # пробует прямо сейчас; сверху не рассылаем по старым платежам после деплоя.
+  # cooldown-days — не чаще одного напоминания на пользователя в N дней.
+  recovery:
+    enabled: ${PAYMENT_RECOVERY_ENABLED:true}
+    min-age-minutes: ${PAYMENT_RECOVERY_MIN_AGE_MINUTES:60}
+    max-age-minutes: ${PAYMENT_RECOVERY_MAX_AGE_MINUTES:180}
+    cooldown-days: ${PAYMENT_RECOVERY_COOLDOWN_DAYS:7}
+    check-interval-ms: ${PAYMENT_RECOVERY_CHECK_INTERVAL_MS:900000}
 
 openrouter:
   api-key: ${OPENROUTER_API_KEY}

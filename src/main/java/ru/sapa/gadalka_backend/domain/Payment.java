@@ -61,6 +61,13 @@ public class Payment {
     @Column(name = "credits_to_grant", nullable = false)
     private Integer creditsToGrant;
 
+    /**
+     * Когда пользователю отправлено напоминание о брошенной оплате
+     * (см. PaymentRecoveryService). NULL — не отправлялось.
+     */
+    @Column(name = "reminder_sent_at")
+    private OffsetDateTime reminderSentAt;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 

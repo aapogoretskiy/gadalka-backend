@@ -190,4 +190,30 @@ public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpec
             @Param("provider") PaymentProvider provider,
             @Param("cutoff") OffsetDateTime cutoff,
             @Param("now") OffsetDateTime now);
+
+    // ── Догоняющие напоминания о брошенной оплате (PaymentRecoveryService) ───
+
+    /**
+     * Кандидаты на напоминание: неуспешные платежи в окне [from, to] без уже
+     * отправленного напоминания. Окно снизу ({@code from}) отсекает старые платежи
+     * (по ним при деплое ничего не шлём — их закрывает реанимационная рассылка),
+     * сверху ({@code to}) — даёт пользователю время завершить оплату самому.
+     * <p>
+     * Сортировка по createdAt DESC: если у пользователя несколько брошенных платежей,
+     * сервис напомнит о самом свежем, остальные отсечёт кулдаун.
+     */
+    @Query("SELECT p FROM Payment p " +
+            "WHERE p.status IN ('CANCELLED', 'FAILED') " +
+            "AND p.reminderSentAt IS NULL " +
+            "AND p.createdAt >= :from AND p.createdAt <= :to " +
+            "ORDER BY p.createdAt DESC")
+    List<Payment> findRecoveryCandidates(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    /** Успел ли пользователь оплатить после момента брошенного платежа — тогда не напоминаем */
+    boolean existsByUserIdAndStatusAndCreatedAtAfter(Long userId, PaymentStatus status, OffsetDateTime after);
+
+    /** Анти-спам: было ли пользователю напоминание после указанного момента (кулдаун) */
+    boolean existsByUserIdAndReminderSentAtAfter(Long userId, OffsetDateTime after);
 }

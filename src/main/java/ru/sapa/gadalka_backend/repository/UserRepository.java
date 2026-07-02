@@ -261,4 +261,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     @Query("SELECT u.id FROM User u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :username, '%'))")
     List<Long> findIdsByUsernameContainingIgnoreCase(@Param("username") String username);
+
+    // ── Сегменты аудитории для рассылок (AdminController#broadcast) ──────────
+
+    /**
+     * ID «неактивированных»: зарегистрировались, но не совершили ни одного действия.
+     * Забаненные исключены; cutoff отсекает свежих пользователей — они ещё могут
+     * дойти до первого действия сами, дёргать их рассылкой рано.
+     */
+    @Query("SELECT u.id FROM User u WHERE u.totalActionsCount = 0 AND u.banned = false AND u.createdAt < :cutoff")
+    List<Long> findInactiveUserIds(@Param("cutoff") OffsetDateTime cutoff);
+
+    /** Счётчик того же сегмента — для отображения числа получателей в админке до отправки */
+    @Query("SELECT COUNT(u) FROM User u WHERE u.totalActionsCount = 0 AND u.banned = false AND u.createdAt < :cutoff")
+    long countInactiveUsers(@Param("cutoff") OffsetDateTime cutoff);
 }
