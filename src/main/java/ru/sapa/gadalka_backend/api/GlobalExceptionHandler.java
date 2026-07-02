@@ -28,6 +28,27 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * ResponseStatusException — осмысленные HTTP-ошибки, которые сервисы кидают сами
+     * (например, 422 «нужна дата рождения» из HoroscopeService/NumerologyDayService).
+     * Без этого обработчика они проваливались в общий handleRuntime и превращались
+     * в 500 — а фронт ждёт статус 422, чтобы показать мягкий экран «укажите дату
+     * рождения» вместо ошибки. Проявилось после онбординга без барьера: раньше
+     * пользователей без профиля в приложение просто не пускали.
+     */
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(
+            org.springframework.web.server.ResponseStatusException ex,
+            HttpServletRequest request) {
+        log.info("Ожидаемая HTTP-ошибка [{} {}]: {} {}", request.getMethod(), request.getRequestURI(), ex.getStatusCode().value(), ex.getReason());
+
+        return ResponseEntity.status(ex.getStatusCode())
+                .body(new ErrorResponse(ex.getStatusCode().value(),
+                        ex.getReason() != null ? ex.getReason() : "Ошибка запроса",
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
     @ExceptionHandler(SensitiveContentBlockedException.class)
     public ResponseEntity<ErrorResponse> handleSensitiveContent(SensitiveContentBlockedException ex,
                                                                  HttpServletRequest request) {
