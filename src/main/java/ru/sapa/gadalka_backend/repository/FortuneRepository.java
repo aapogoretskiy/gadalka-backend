@@ -16,6 +16,8 @@ public interface FortuneRepository extends JpaRepository<Fortune, Long> {
 
     boolean existsByIdAndUserId(Long id, Long userId);
 
+    boolean existsByUserId(Long userId);
+
     // ── История действий пользователя ────────────────────────────────────────
 
     List<Fortune> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);

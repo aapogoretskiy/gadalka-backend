@@ -11,6 +11,7 @@ import ru.sapa.gadalka_backend.api.dto.profile.UpdateProfileRequest;
 import ru.sapa.gadalka_backend.domain.DiaryEntry;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.UserProfile;
+import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.NotificationTime;
 import ru.sapa.gadalka_backend.repository.DiaryRepository;
@@ -31,6 +32,9 @@ public class UserProfileService {
     private final UserProfileRepository userProfileRepository;
     private final DiaryRepository diaryRepository;
     private final ObjectMapper objectMapper;
+    private final FortuneCreditService fortuneCreditService;
+
+    private static final int PROFILE_REWARD_CREDITS = 1;
 
     @Transactional
     public ProfileResponse getProfile(Long userId) {
@@ -61,10 +65,14 @@ public class UserProfileService {
 
         userProfileRepository.save(userProfile);
 
-        // Фиксируем факт принятия юридических документов (152-ФЗ)
-        user.setTermsAcceptedAt(OffsetDateTime.now());
-        user.setTermsVersion(createRequest.termsVersion());
+        if (user.getTermsAcceptedAt() == null) {
+            user.setTermsAcceptedAt(OffsetDateTime.now());
+            user.setTermsVersion(createRequest.termsVersion());
+        }
         userRepository.save(user);
+
+        fortuneCreditService.grantCredits(userId, PROFILE_REWARD_CREDITS, CreditTransactionReason.PROFILE_REWARD, null);
+        log.info("Начислен бонус за заполнение профиля: userId={}, credits={}", userId, PROFILE_REWARD_CREDITS);
 
         return map(userProfile);
     }

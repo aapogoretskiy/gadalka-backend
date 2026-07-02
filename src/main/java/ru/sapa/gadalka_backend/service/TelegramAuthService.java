@@ -125,6 +125,7 @@ public class TelegramAuthService {
                     .jwtToken(token)
                     .readingBalance(fortuneCreditService.getBalance(user.getId()))
                     .isNewUser(isNewUser)
+                    .termsAccepted(user.getTermsAcceptedAt() != null)
                     .build();
 
         } catch (Exception e) {

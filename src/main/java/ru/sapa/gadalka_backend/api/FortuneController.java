@@ -4,8 +4,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,10 +23,12 @@ import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.service.AiRateLimitService;
 import ru.sapa.gadalka_backend.service.CompatibilityService;
 import ru.sapa.gadalka_backend.service.FortuneService;
+import ru.sapa.gadalka_backend.service.OnboardingFortuneService;
 import ru.sapa.gadalka_backend.service.ProfanityFilterService;
 import ru.sapa.gadalka_backend.service.PromptInjectionFilterService;
 import ru.sapa.gadalka_backend.service.SensitiveContentFilterService;
 
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -35,11 +39,36 @@ import java.util.Optional;
 public class FortuneController extends BaseController {
 
     private final FortuneService fortuneService;
+    private final OnboardingFortuneService onboardingFortuneService;
     private final CompatibilityService compatibilityService;
     private final ProfanityFilterService profanityFilterService;
     private final PromptInjectionFilterService promptInjectionFilterService;
     private final SensitiveContentFilterService sensitiveContentFilterService;
     private final AiRateLimitService aiRateLimitService;
+
+    /**
+     * GET /api/fortune/onboarding/questions — вопросы для кнопок онбординга.
+     */
+    @GetMapping("/onboarding/questions")
+    @Operation(summary = "Вопросы онбординг-расклада",
+               description = "Фиксированный список вопросов, из которых новичок выбирает для подарочного расклада")
+    public List<String> getOnboardingQuestions() {
+        return onboardingFortuneService.getQuestions();
+    }
+
+    /**
+     * POST /api/fortune/onboarding — подарочный первый расклад.
+     * Без списания знаков и без AI (предгенерированный пул). Только для пользователей
+     * без единого расклада; вопрос — строго из списка выше (фильтры не нужны).
+     */
+    @PostMapping("/onboarding")
+    @Operation(summary = "Подарочный онбординг-расклад",
+               description = "Первый расклад в подарок: знаки не списываются, доступен один раз")
+    public FortuneResponse getOnboardingFortune(@Valid @RequestBody OnboardingFortuneRequest onboardingRequest,
+                                                HttpServletRequest request) {
+        User user = resolveUser(request);
+        return onboardingFortuneService.createOnboardingFortune(user, onboardingRequest.question());
+    }
 
     @PostMapping
     @Operation(summary = "Гадание Таро",
@@ -91,4 +120,7 @@ public class FortuneController extends BaseController {
                                                   HttpServletRequest request) {
         return compatibilityService.getCompatibility(resolveUser(request), compatibilityRequest.getPersons());
     }
+
+    /** DTO онбординг-расклада: только вопрос из фиксированного списка */
+    public record OnboardingFortuneRequest(@NotBlank String question) {}
 }

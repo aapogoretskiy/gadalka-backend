@@ -14,4 +14,6 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     @Query(value = "SELECT * FROM cards ORDER BY random() LIMIT :limit", nativeQuery = true)
     List<Card> findRandomCards(@Param("limit") int limit);
+
+    List<Card> findBySlugIn(List<String> slugs);
 }

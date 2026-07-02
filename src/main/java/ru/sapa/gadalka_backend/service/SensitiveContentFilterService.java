@@ -60,7 +60,7 @@ public class SensitiveContentFilterService {
                     )),
                     Map.entry(SensitiveContentCategory.DEATH_MORTALITY, Set.of(
                             "умру", "умрет", "умереть",
-                            "похорон", "сколько проживу", "когда умру", "доживу ли",
+                            "сколько проживу", "когда умру", "доживу ли",
                             "скоро умр", "дата смерти"
                     )),
                     Map.entry(SensitiveContentCategory.SELF_HARM_SUICIDE, Set.of(
@@ -78,7 +78,7 @@ public class SensitiveContentFilterService {
                             "терроризм", "взрыв устроить"
                     )),
                     Map.entry(SensitiveContentCategory.GAMBLING_INVESTMENT, Set.of(
-                            "казино", "букмекер", "ставк на спорт", "лотерея выиграю"
+                            "ставк на спорт", "лотерея выиграю"
                     )),
                     Map.entry(SensitiveContentCategory.POLITICAL_RELIGIOUS, Set.of(
                             "путин", "навальн", "кремл", "оппозиц"
