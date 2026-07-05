@@ -2,4 +2,4 @@
 -- Код категории (intimacy) не меняем: он зашит в валидацию FortuneRequest,
 -- фильтрацию пресетов на фронте и промпт интерпретации. Меняется только
 -- отображаемое имя (используется в админке).
-UPDATE question_category SET name = 'Секс' WHERE code = 'intimacy';
+UPDATE question_categories SET name = 'Секс' WHERE code = 'intimacy';
