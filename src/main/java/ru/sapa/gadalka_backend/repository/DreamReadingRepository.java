@@ -15,6 +15,9 @@ public interface DreamReadingRepository extends JpaRepository<DreamReading, Long
     /** Проверка принадлежности разбора пользователю при открытии из истории. */
     Optional<DreamReading> findByIdAndUserId(Long id, Long userId);
 
+    /** Лёгкая проверка принадлежности для валидатора фидбэка (👍/👎). */
+    boolean existsByIdAndUserId(Long id, Long userId);
+
     /** «Недавние сны» на экране Сонника + история действий в админке. */
     List<DreamReading> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 

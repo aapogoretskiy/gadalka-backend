@@ -526,7 +526,16 @@ public class AdminController {
         }
 
         // ── Разборы снов (Сонник) ────────────────────────────────────────────
-        for (DreamReading dr : dreamReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+        List<DreamReading> dreamReadings = dreamReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable);
+        List<Long> dreamReadingIds = dreamReadings.stream().map(DreamReading::getId).collect(Collectors.toList());
+
+        // Батч-загрузка фидбэков (один запрос вместо N) — по аналогии с гаданиями
+        Map<Long, ActionFeedback> dreamFeedbacks = actionFeedbackRepository
+                .findByActionTypeAndActionIdIn(FeedbackTargetType.DREAM, dreamReadingIds)
+                .stream()
+                .collect(Collectors.toMap(ActionFeedback::getActionId, fb -> fb));
+
+        for (DreamReading dr : dreamReadings) {
             String details;
             String interpretation = null;
             try {
@@ -543,6 +552,7 @@ public class AdminController {
                 String text = dr.getDreamText();
                 details += " — " + (text.length() > 60 ? text.substring(0, 60) + "…" : text);
             }
+            ActionFeedback fb = dreamFeedbacks.get(dr.getId());
             var item = new java.util.LinkedHashMap<String, Object>();
             item.put("id",             dr.getId());
             item.put("type",           "DREAM");
@@ -550,8 +560,8 @@ public class AdminController {
             item.put("date",           dr.getCreatedAt().toString());
             item.put("details",        details);
             item.put("interpretation", interpretation);
-            item.put("feedbackRating", null);
-            item.put("feedbackComment", null);
+            item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
+            item.put("feedbackComment", fb != null ? fb.getComment() : null);
             actions.add(item);
         }
 

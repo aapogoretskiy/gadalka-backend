@@ -8,5 +8,6 @@ package ru.sapa.gadalka_backend.domain.type;
 public enum FeedbackTargetType {
     FORTUNE,
     COMPATIBILITY,
-    NUMEROLOGY_WEEK
+    NUMEROLOGY_WEEK,
+    DREAM
 }
