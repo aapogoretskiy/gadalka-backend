@@ -139,6 +139,8 @@ public class DiaryService {
                     HttpStatus.BAD_REQUEST, "Гороскоп на день сохраняется в дневник автоматически");
             case NUMEROLOGY_PORTRAIT -> throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Портрет личности сохраняется в дневник автоматически");
+            case DREAM -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Результат работы сна сохраняется в дневник автоматически");
         };
     }
 
