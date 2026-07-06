@@ -27,6 +27,24 @@ public interface AiInterpretationService {
      */
     HoroscopeContent interpretDailyHoroscope(ZodiacSign zodiacSign, LocalDate date);
 
+    /**
+     * Разбор сна (Сонник): единый LLM-вызов, возвращающий строго структурированный
+     * {@link DreamContent}. Невалидный JSON приводит к ретраям внутри реализации,
+     * после исчерпания попыток — {@link DreamGenerationException}.
+     *
+     * @param dreamText       текст сна от пользователя (может быть null/пустым, если выбраны только символы)
+     * @param selectedSymbols выбранные пользователем символы-чипы с классическими значениями
+     *                        (подсказки для промпта); может быть пустым списком
+     * @param zodiacSign      знак зодиака пользователя (по дате рождения из профиля)
+     * @param lifePathNumber  число жизни пользователя (нумерология)
+     * @throws DreamRefusedException    если AI отказался разбирать сон (чувствительная тема)
+     * @throws DreamGenerationException если не удалось получить валидный ответ после всех попыток
+     */
+    DreamContent interpretDream(String dreamText,
+                                List<DreamContent.SymbolMeaning> selectedSymbols,
+                                ZodiacSign zodiacSign,
+                                int lifePathNumber);
+
     String getProvider();
 
     /**

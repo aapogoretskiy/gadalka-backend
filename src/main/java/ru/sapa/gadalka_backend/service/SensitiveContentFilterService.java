@@ -112,12 +112,37 @@ public class SensitiveContentFilterService {
      * @return категория чувствительного контента, либо empty если вопрос безопасен
      */
     public Optional<SensitiveContentCategory> detectByKeywords(String question) {
+        return detectByKeywords(question, Set.of(SensitiveContentCategory.values()));
+    }
+
+    /**
+     * Мягкий режим для Сонника: в тексте сна образы смерти, болезней и насилия — норма
+     * (пользователь описывает сон, а не спрашивает о реальных событиях), поэтому
+     * блокируем только категории, жёсткие для любого контекста: СВО/война, политика/религия
+     * и суицид/самоповреждение (последнее — из соображений безопасности пользователя:
+     * такой запрос требует ответа с телефоном доверия, а не мистической трактовки).
+     */
+    public Optional<SensitiveContentCategory> detectByKeywordsForDream(String dreamText) {
+        return detectByKeywords(dreamText, Set.of(
+                SensitiveContentCategory.POLITICAL_RELIGIOUS,
+                SensitiveContentCategory.SELF_HARM_SUICIDE));
+    }
+
+    /**
+     * Общая реализация keyword-детекции с ограничением по набору категорий:
+     * категории вне {@code categoriesToCheck} игнорируются целиком (их ключевые
+     * слова даже не проверяются), а не отфильтровываются после первого совпадения —
+     * иначе «безопасное» совпадение могло бы замаскировать «опасное».
+     */
+    private Optional<SensitiveContentCategory> detectByKeywords(String question,
+                                                                Set<SensitiveContentCategory> categoriesToCheck) {
         if (question == null || question.isBlank()) return Optional.empty();
 
         String normalized = normalize(question);
 
         // Уровень 1а: точное совпадение токена (аббревиатуры)
         for (Map.Entry<SensitiveContentCategory, Set<String>> entry : KEYWORD_EXACT_WORDS.entrySet()) {
+            if (!categoriesToCheck.contains(entry.getKey())) continue;
             for (String word : entry.getValue()) {
                 if (containsExactWord(normalized, normalize(word))) {
                     log.info("Keyword-фильтр (точное слово): '{}', категория={}", word, entry.getKey());
@@ -128,6 +153,7 @@ public class SensitiveContentFilterService {
 
         // Уровень 1б: вхождение корня/подстроки
         for (Map.Entry<SensitiveContentCategory, Set<String>> entry : KEYWORD_ROOTS.entrySet()) {
+            if (!categoriesToCheck.contains(entry.getKey())) continue;
             for (String root : entry.getValue()) {
                 if (normalized.contains(normalize(root))) {
                     log.info("Keyword-фильтр (корень): '{}', категория={}", root, entry.getKey());

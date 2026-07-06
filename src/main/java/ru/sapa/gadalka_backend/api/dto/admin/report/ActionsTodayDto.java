@@ -8,5 +8,6 @@ public record ActionsTodayDto(
         long compatibility,
         long numerology,
         long dailyCard,
-        long numerologyWeek
+        long numerologyWeek,
+        long dream
 ) {}

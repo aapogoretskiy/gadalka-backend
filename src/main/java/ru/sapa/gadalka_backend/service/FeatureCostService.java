@@ -7,6 +7,7 @@ import ru.sapa.gadalka_backend.domain.type.SpreadType;
 
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_CELTIC_CROSS;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_COMPATIBILITY_UNLOCK;
+import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_DREAM;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_HORSESHOE;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_NUMEROLOGY_WEEK;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_THREE_CARD;
@@ -46,6 +47,11 @@ public class FeatureCostService {
         return systemConfigService.getIntValue(FEATURE_COST_NUMEROLOGY_WEEK, 3);
     }
 
+    /** Стоимость разбора сна (Сонник). */
+    public int getDreamCost() {
+        return systemConfigService.getIntValue(FEATURE_COST_DREAM, 3);
+    }
+
     /** Снимок всех текущих цен — для отображения в админ-панели. */
     public FeatureCostsDto getAllCosts() {
         return new FeatureCostsDto(
@@ -53,7 +59,8 @@ public class FeatureCostService {
                 getCost(SpreadType.HORSESHOE),
                 getCost(SpreadType.CELTIC_CROSS),
                 getCompatibilityUnlockCost(),
-                getNumerologyWeekCost()
+                getNumerologyWeekCost(),
+                getDreamCost()
         );
     }
 
@@ -64,7 +71,7 @@ public class FeatureCostService {
      */
     public void updateCosts(FeatureCostsDto costs) {
         if (costs.threeCard() <= 0 || costs.horseshoe() <= 0 || costs.celticCross() <= 0
-                || costs.compatibilityUnlock() <= 0 || costs.numerologyWeek() <= 0) {
+                || costs.compatibilityUnlock() <= 0 || costs.numerologyWeek() <= 0 || costs.dream() <= 0) {
             throw new IllegalArgumentException("Стоимость функции должна быть положительным числом");
         }
         systemConfigService.setValue(FEATURE_COST_THREE_CARD, String.valueOf(costs.threeCard()));
@@ -72,5 +79,6 @@ public class FeatureCostService {
         systemConfigService.setValue(FEATURE_COST_CELTIC_CROSS, String.valueOf(costs.celticCross()));
         systemConfigService.setValue(FEATURE_COST_COMPATIBILITY_UNLOCK, String.valueOf(costs.compatibilityUnlock()));
         systemConfigService.setValue(FEATURE_COST_NUMEROLOGY_WEEK, String.valueOf(costs.numerologyWeek()));
+        systemConfigService.setValue(FEATURE_COST_DREAM, String.valueOf(costs.dream()));
     }
 }

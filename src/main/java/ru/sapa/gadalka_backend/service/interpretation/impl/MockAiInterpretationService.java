@@ -8,6 +8,7 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationService;
+import ru.sapa.gadalka_backend.service.interpretation.DreamContent;
 import ru.sapa.gadalka_backend.service.interpretation.HoroscopeContent;
 import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
@@ -58,6 +59,37 @@ public class MockAiInterpretationService implements AiInterpretationService {
                 "На работе стоит сосредоточиться на одной важной задаче, не разбрасываясь.",
                 "Хороший день для обсуждения финансовых вопросов, но не для подписания документов.",
                 4, 5, 3, 4
+        );
+    }
+
+    @Override
+    public DreamContent interpretDream(String dreamText,
+                                       List<DreamContent.SymbolMeaning> selectedSymbols,
+                                       ZodiacSign zodiacSign,
+                                       int lifePathNumber) {
+        // Заголовок собираем из выбранных чипов, чтобы мок вёл себя как настоящий разбор
+        List<String> titleSymbols = selectedSymbols.isEmpty()
+                ? List.of("Полёт", "Дом")
+                : selectedSymbols.stream().map(DreamContent.SymbolMeaning::name).limit(3).toList();
+
+        List<DreamContent.SymbolMeaning> symbols = selectedSymbols.isEmpty()
+                ? List.of(
+                        new DreamContent.SymbolMeaning("Полёт", "Желание вырваться за пределы привычного и обрести свободу."),
+                        new DreamContent.SymbolMeaning("Дом", "Новый этап жизни, который ещё не изведан, но уже чувствуется."))
+                : selectedSymbols.stream()
+                        .map(s -> new DreamContent.SymbolMeaning(s.name(),
+                                "Во сне символ «" + s.name() + "» может говорить о переменах, которые вы уже чувствуете."))
+                        .toList();
+
+        return new DreamContent(
+                titleSymbols,
+                "Этот сон говорит о стремлении к свободе и независимости. Подсознание подсказывает, " +
+                        "что вы готовы к переменам, но ещё не решились сделать первый шаг.",
+                "Для числа " + lifePathNumber + " сон особенно символичен — вы готовы к новому пути.",
+                "Для знака " + zodiacSign.getDisplayName() + " сны сейчас часто связаны с балансом и отношениями.",
+                symbols,
+                "Сегодня обратите внимание на ситуации, где вы чувствуете ограничение — пришло время двигаться вперёд.",
+                "Что мой сон хочет мне подсказать о переменах?"
         );
     }
 

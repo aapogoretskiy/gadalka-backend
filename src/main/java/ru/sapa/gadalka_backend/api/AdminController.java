@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sapa.gadalka_backend.api.dto.admin.AdminDreamSymbolDto;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.SensitiveQueryLogDto;
 import ru.sapa.gadalka_backend.api.dto.admin.payment.TransactionDetailsDto;
@@ -36,6 +37,8 @@ import ru.sapa.gadalka_backend.repository.ActionFeedbackRepository;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
 import ru.sapa.gadalka_backend.repository.DailyCardRepository;
 import ru.sapa.gadalka_backend.repository.DiaryRepository;
+import ru.sapa.gadalka_backend.repository.DreamReadingRepository;
+import ru.sapa.gadalka_backend.repository.DreamSymbolRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
@@ -108,6 +111,8 @@ public class AdminController {
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
+    private final DreamReadingRepository dreamReadingRepository;
+    private final DreamSymbolRepository dreamSymbolRepository;
     private final DailyCardRepository dailyCardRepository;
     private final DiaryRepository diaryRepository;
     private final ActionFeedbackRepository actionFeedbackRepository;
@@ -520,6 +525,36 @@ public class AdminController {
             }
         }
 
+        // ── Разборы снов (Сонник) ────────────────────────────────────────────
+        for (DreamReading dr : dreamReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable)) {
+            String details;
+            String interpretation = null;
+            try {
+                JsonNode payload = objectMapper.readTree(dr.getPayload());
+                List<String> titleSymbols = new ArrayList<>();
+                payload.path("titleSymbols").forEach(n -> titleSymbols.add(n.asText()));
+                details = titleSymbols.isEmpty() ? "Разбор сна" : String.join(" · ", titleSymbols);
+                interpretation = payload.path("mainMeaning").asText(null);
+            } catch (Exception e) {
+                log.warn("Не удалось распарсить payload разбора сна id={}", dr.getId(), e);
+                details = "Разбор сна";
+            }
+            if (dr.getDreamText() != null && !dr.getDreamText().isBlank()) {
+                String text = dr.getDreamText();
+                details += " — " + (text.length() > 60 ? text.substring(0, 60) + "…" : text);
+            }
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             dr.getId());
+            item.put("type",           "DREAM");
+            item.put("label",          "Разбор сна");
+            item.put("date",           dr.getCreatedAt().toString());
+            item.put("details",        details);
+            item.put("interpretation", interpretation);
+            item.put("feedbackRating", null);
+            item.put("feedbackComment", null);
+            actions.add(item);
+        }
+
         // Сортируем общий список по дате убыванию и обрезаем до limit
         actions.sort(Comparator.comparing(a -> (String) a.get("date"), Comparator.reverseOrder()));
         var result = actions.size() > safeLimit ? actions.subList(0, safeLimit) : actions;
@@ -801,6 +836,91 @@ public class AdminController {
         }
 
         return ResponseEntity.ok(featureCostService.getAllCosts());
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  DREAM SYMBOLS (Сонник — символы-чипы)
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * GET /api/admin/dream-symbols — все символы, включая выключенные.
+     * Пользовательский эндпоинт /api/dreams/symbols отдаёт только активные.
+     */
+    @GetMapping("/dream-symbols")
+    public ResponseEntity<List<AdminDreamSymbolDto>> getDreamSymbols(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил список символов снов", adminId);
+        return ResponseEntity.ok(dreamSymbolRepository.findAllByOrderBySortOrderAsc().stream()
+                .map(this::toAdminDreamSymbolDto)
+                .toList());
+    }
+
+    /** POST /api/admin/dream-symbols — создать символ. */
+    @PostMapping("/dream-symbols")
+    public ResponseEntity<?> createDreamSymbol(@RequestBody AdminDreamSymbolDto body, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} создаёт символ сна: {}", adminId, body);
+
+        if (StringUtils.isBlank(body.emoji()) || StringUtils.isBlank(body.name())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Эмодзи и название символа обязательны"));
+        }
+
+        DreamSymbol symbol = DreamSymbol.builder()
+                .emoji(body.emoji().trim())
+                .name(body.name().trim())
+                .promptHint(StringUtils.trimToNull(body.promptHint()))
+                .sortOrder(body.sortOrder() != null ? body.sortOrder() : 0)
+                .isActive(body.isActive() == null || body.isActive())
+                .build();
+        return ResponseEntity.ok(toAdminDreamSymbolDto(dreamSymbolRepository.save(symbol)));
+    }
+
+    /** PUT /api/admin/dream-symbols/{id} — обновить символ (включая вкл/выкл). */
+    @PutMapping("/dream-symbols/{id}")
+    public ResponseEntity<?> updateDreamSymbol(@PathVariable Long id,
+                                               @RequestBody AdminDreamSymbolDto body,
+                                               HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} обновляет символ сна id={}: {}", adminId, id, body);
+
+        Optional<DreamSymbol> found = dreamSymbolRepository.findById(id);
+        if (found.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (StringUtils.isBlank(body.emoji()) || StringUtils.isBlank(body.name())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Эмодзи и название символа обязательны"));
+        }
+
+        DreamSymbol symbol = found.get();
+        symbol.setEmoji(body.emoji().trim());
+        symbol.setName(body.name().trim());
+        symbol.setPromptHint(StringUtils.trimToNull(body.promptHint()));
+        if (body.sortOrder() != null) symbol.setSortOrder(body.sortOrder());
+        if (body.isActive() != null) symbol.setIsActive(body.isActive());
+        return ResponseEntity.ok(toAdminDreamSymbolDto(dreamSymbolRepository.save(symbol)));
+    }
+
+    /**
+     * DELETE /api/admin/dream-symbols/{id} — удалить символ насовсем.
+     * Безопасно для истории: старые разборы хранят имена символов снимком
+     * в dream_readings.selected_symbols, а не FK на справочник.
+     * Для временного скрытия чипа достаточно PUT с isActive=false.
+     */
+    @DeleteMapping("/dream-symbols/{id}")
+    public ResponseEntity<?> deleteDreamSymbol(@PathVariable Long id, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} удаляет символ сна id={}", adminId, id);
+
+        if (dreamSymbolRepository.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        dreamSymbolRepository.deleteById(id);
+        return ResponseEntity.ok(Map.of("deleted", true));
+    }
+
+    private AdminDreamSymbolDto toAdminDreamSymbolDto(DreamSymbol s) {
+        return new AdminDreamSymbolDto(s.getId(), s.getEmoji(), s.getName(),
+                s.getPromptHint(), s.getSortOrder(), s.getIsActive());
     }
 
     // ══════════════════════════════════════════════════════════

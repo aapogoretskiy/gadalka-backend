@@ -16,11 +16,15 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityCategoryScore;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationService;
+import ru.sapa.gadalka_backend.service.interpretation.DreamContent;
+import ru.sapa.gadalka_backend.service.interpretation.DreamGenerationException;
+import ru.sapa.gadalka_backend.service.interpretation.DreamRefusedException;
 import ru.sapa.gadalka_backend.service.interpretation.HoroscopeContent;
 import ru.sapa.gadalka_backend.service.interpretation.HoroscopeGenerationException;
 import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -67,6 +71,35 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
 
                     """;
 
+    /**
+     * Мягкие правила чувствительности для Сонника — заменяют стандартные {@link #SENSITIVITY_RULES}.
+     *
+     * <p>Почему отдельные правила: в снах образы смерти, болезней и насилия — норма
+     * (пользователь пересказывает сон, а не спрашивает о реальной смерти), и стандартные
+     * правила заставляли бы LLM отказывать почти на каждый второй сон. Жёсткими остаются
+     * только темы: политика/СВО/религия и намерение причинить вред наяву.
+     *
+     * <p>Отказ — строго через {@code "refused": true} в JSON (а не текстовой фразой),
+     * иначе парсер не отличит отказ от невалидного ответа. См. {@link DreamRefusedException}.
+     */
+    private static final String DREAM_SENSITIVITY_RULES =
+            """
+                    Особенность контекста: пользователь пересказывает СОН. Образы смерти, болезней, \
+                    насилия, падений и катастроф — нормальная часть сновидений: трактуй их символически \
+                    и бережно (например, смерть во сне — завершение этапа, а не предсказание реальной смерти).
+                    Правила:
+                    — НЕ предсказывай реальную смерть, болезни или несчастья пользователю и его близким;
+                    — НЕ давай медицинских и психиатрических заключений и диагнозов;
+                    — не используй запугивающие формулировки, тон — тёплый и поддерживающий;
+                    — не давай категоричных предсказаний: «сон может говорить», «стоит обратить внимание».
+                    Ты НЕ разбираешь сны, которые целиком посвящены темам: военные конфликты и СВО, \
+                    политические деятели и партии, религиозные утверждения о правоте. \
+                    Также откажи, если пользователь описывает намерение причинить вред себе или другим НАЯВУ \
+                    (а не образ из сна). В этих случаях верни JSON вида \
+                    {"refused": true, "reason": "<короткое тёплое объяснение отказа>"} и больше ничего.
+
+                    """;
+
     /** Лимит токенов для общей интерпретации расклада */
     private static final int MAX_TOKENS_GENERAL = 900;
 
@@ -75,6 +108,21 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
 
     /** Лимит токенов для гороскопа на день (5 текстовых разделов + 4 рейтинга) */
     private static final int MAX_TOKENS_HOROSCOPE = 650;
+
+    /**
+     * Лимит токенов для разбора сна: 4 текстовых секции + разбор до 5 символов + совет
+     * + вопрос для Оракула. Самый «толстый» JSON из всех наших фич — отсюда и лимит выше остальных.
+     */
+    private static final int MAX_TOKENS_DREAM = 1300;
+
+    /** Попытки получить валидный JSON разбора сна — та же логика, что и у гороскопа. */
+    private static final int DREAM_MAX_ATTEMPTS = 3;
+
+    /** Заглушка для отдельной незаполненной секции разбора сна. */
+    private static final String DREAM_FIELD_FALLBACK = "Сон не раскрыл эту грань — прислушайтесь к своим ощущениям.";
+
+    /** Вопрос для Оракула по умолчанию, если AI не вернул поле oracleQuestion. */
+    private static final String DREAM_DEFAULT_ORACLE_QUESTION = "Что мой сон хочет мне подсказать?";
 
     /**
      * Сколько раз пробовать получить от AI валидный гороскоп, прежде чем сдаться.
@@ -188,7 +236,152 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                 lastError);
     }
 
+    @Override
+    public DreamContent interpretDream(String dreamText,
+                                       List<DreamContent.SymbolMeaning> selectedSymbols,
+                                       ZodiacSign zodiacSign,
+                                       int lifePathNumber) {
+        String userPrompt = buildDreamPrompt(dreamText, selectedSymbols, zodiacSign, lifePathNumber);
+        String systemPrompt =
+                """
+                        Ты — опытный толкователь снов, сочетающий классическую символику сновидений \
+                        с эзотерикой: нумерологией и астрологией. Говоришь тепло, образно, но конкретно, без воды. \
+                        Все тексты только на русском языке, без markdown и спецсимволов.
+                        Разбери сон пользователя и ответь строго в формате JSON со следующими полями:
+                        "titleSymbols" (массив из 2-3 строк) — ключевые символы сна с большой буквы, \
+                        одно-два слова каждый; если пользователь выбрал символы из списка — включи их в первую очередь;
+                        "mainMeaning" (строка) — главный смысл сна, 3-4 предложения;
+                        "lifeNumberSection" (строка) — что сон значит в связке с числом жизни пользователя, \
+                        2-3 предложения, упомяни само число и его архетип;
+                        "zodiacSection" (строка) — что сон значит для знака зодиака пользователя, 2-3 предложения;
+                        "symbols" (массив объектов {"name": строка, "meaning": строка}) — каждый ключевой символ сна \
+                        и его значение именно в контексте этого сна, 1-2 предложения на символ, не более 5 символов; \
+                        выбранные пользователем символы разбери обязательно;
+                        "advice" (строка) — мягкий совет на сегодня по мотивам сна, 1-2 предложения;
+                        "oracleQuestion" (строка) — короткий вопрос от первого лица (до 100 символов), \
+                        который пользователь мог бы задать картам Таро, чтобы глубже разобраться в теме сна.
+                        Ответ — только валидный JSON, без markdown, без пояснений, без обёртки в ```.""";
+
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= DREAM_MAX_ATTEMPTS; attempt++) {
+            String raw = null;
+            try {
+                raw = callAi(userPrompt, systemPrompt, DREAM_SENSITIVITY_RULES, MAX_TOKENS_DREAM);
+                return parseDreamContent(raw);
+            } catch (DreamRefusedException refused) {
+                // Отказ — осознанное решение модели, ретраить бессмысленно
+                throw refused;
+            } catch (Exception ex) {
+                lastError = ex;
+                log.warn("Попытка {}/{} разбора сна не удалась: {}. Ответ AI: {}",
+                        attempt, DREAM_MAX_ATTEMPTS, ex.getMessage(), raw);
+            }
+        }
+
+        throw new DreamGenerationException(
+                "Не удалось получить валидный разбор сна за " + DREAM_MAX_ATTEMPTS + " попыток", lastError);
+    }
+
     // -------------------------------------------------------------------------
+
+    private String buildDreamPrompt(String dreamText,
+                                    List<DreamContent.SymbolMeaning> selectedSymbols,
+                                    ZodiacSign zodiacSign,
+                                    int lifePathNumber) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Контекст пользователя: знак зодиака — ").append(zodiacSign.getDisplayName())
+          .append(", число жизни — ").append(lifePathNumber).append(".\n\n");
+
+        if (StringUtils.isNotBlank(dreamText)) {
+            sb.append("Сон пользователя: ").append(dreamText.trim()).append("\n\n");
+        }
+
+        if (!selectedSymbols.isEmpty()) {
+            sb.append("Символы, которые пользователь отметил в своём сне:\n");
+            for (DreamContent.SymbolMeaning symbol : selectedSymbols) {
+                sb.append("— ").append(symbol.name());
+                if (StringUtils.isNotBlank(symbol.meaning())) {
+                    sb.append(" (классическое значение: ").append(symbol.meaning()).append(")");
+                }
+                sb.append("\n");
+            }
+            sb.append("\n");
+        }
+
+        if (StringUtils.isBlank(dreamText)) {
+            sb.append("Пользователь не описал сон текстом — разбор строится только на отмеченных символах.\n\n");
+        }
+
+        sb.append("Разбери этот сон.");
+        return sb.toString();
+    }
+
+    /**
+     * Парсит ответ AI в {@link DreamContent} — логика аналогична {@link #parseHoroscopeContent}:
+     * невалидный JSON или пустой {@code mainMeaning} → исключение → ретрай;
+     * отсутствие второстепенного поля → заглушка без траты ретрая.
+     * Особый случай: {@code "refused": true} → {@link DreamRefusedException} (без ретраев).
+     */
+    private DreamContent parseDreamContent(String raw) {
+        String cleaned = stripMarkdownFences(raw);
+        JsonNode node;
+        try {
+            node = OBJECT_MAPPER.readTree(cleaned);
+        } catch (Exception ex) {
+            throw new IllegalStateException("AI вернул невалидный JSON: " + ex.getMessage(), ex);
+        }
+
+        JsonNode refused = node.get("refused");
+        if (refused != null && refused.asBoolean(false)) {
+            String reason = textOrNull(node, "reason");
+            log.info("AI отказался разбирать сон: {}", reason);
+            throw new DreamRefusedException(StringUtils.defaultIfBlank(reason, "Эта тема выходит за пределы того, что можно разобрать через сон."));
+        }
+
+        String mainMeaning = textOrNull(node, "mainMeaning");
+        if (mainMeaning == null) {
+            throw new IllegalStateException("AI вернул JSON без главного смысла сна (mainMeaning)");
+        }
+
+        List<DreamContent.SymbolMeaning> symbols = new ArrayList<>();
+        JsonNode symbolsNode = node.get("symbols");
+        if (symbolsNode != null && symbolsNode.isArray()) {
+            for (JsonNode symbolNode : symbolsNode) {
+                String name = textOrNull(symbolNode, "name");
+                String meaning = textOrNull(symbolNode, "meaning");
+                if (name != null && meaning != null) {
+                    symbols.add(new DreamContent.SymbolMeaning(name, meaning));
+                }
+            }
+        }
+
+        List<String> titleSymbols = new ArrayList<>();
+        JsonNode titleNode = node.get("titleSymbols");
+        if (titleNode != null && titleNode.isArray()) {
+            for (JsonNode title : titleNode) {
+                if (title.isTextual() && StringUtils.isNotBlank(title.asText())) {
+                    titleSymbols.add(title.asText().trim());
+                }
+            }
+        }
+        // Заголовок не пришёл — собираем из разобранных символов, чтобы карточка в истории не была пустой
+        if (titleSymbols.isEmpty()) {
+            symbols.stream().limit(3).map(DreamContent.SymbolMeaning::name).forEach(titleSymbols::add);
+        }
+        if (titleSymbols.isEmpty()) {
+            titleSymbols.add("Сон");
+        }
+
+        return new DreamContent(
+                titleSymbols,
+                mainMeaning,
+                StringUtils.defaultIfBlank(textOrNull(node, "lifeNumberSection"), DREAM_FIELD_FALLBACK),
+                StringUtils.defaultIfBlank(textOrNull(node, "zodiacSection"), DREAM_FIELD_FALLBACK),
+                symbols,
+                StringUtils.defaultIfBlank(textOrNull(node, "advice"), DREAM_FIELD_FALLBACK),
+                StringUtils.defaultIfBlank(textOrNull(node, "oracleQuestion"), DREAM_DEFAULT_ORACLE_QUESTION)
+        );
+    }
 
     private String buildHoroscopePrompt(ZodiacSign zodiacSign, LocalDate date) {
         return "Знак зодиака: " + zodiacSign.getDisplayName() + ". Дата: " + date + ". " +
@@ -392,9 +585,18 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
      * фразу, обрывающуюся на полуслове.
      */
     private String callAi(String userPrompt, String systemPrompt, int maxTokens) {
+        return callAi(userPrompt, systemPrompt, SENSITIVITY_RULES, maxTokens);
+    }
+
+    /**
+     * Вариант с подменяемыми правилами чувствительности: Сонник использует смягчённые
+     * {@link #DREAM_SENSITIVITY_RULES} (образы смерти/болезней во сне — норма),
+     * все остальные фичи — стандартные {@link #SENSITIVITY_RULES}.
+     */
+    private String callAi(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens) {
         String content = StringUtils.EMPTY;
         for (int attempt = 1; attempt <= TRUNCATION_MAX_ATTEMPTS; attempt++) {
-            AiCallResult result = callAiRaw(userPrompt, systemPrompt, maxTokens);
+            AiCallResult result = callAiRaw(userPrompt, systemPrompt, sensitivityRules, maxTokens);
             content = result.content();
             if (!"length".equals(result.finishReason())) {
                 return content;
@@ -407,7 +609,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
 
     private record AiCallResult(String content, String finishReason) {}
 
-    private AiCallResult callAiRaw(String userPrompt, String systemPrompt, int maxTokens) {
+    private AiCallResult callAiRaw(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens) {
         String model = getModel();
         log.debug("Отправляем запрос к {} AI, модель='{}', maxTokens={}, промпт: {}",
                 getProvider(), model, maxTokens, userPrompt.length() > 100 ? userPrompt.substring(0, 100) + "…" : userPrompt);
@@ -415,7 +617,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
         AiRequest request = new AiRequest(
                 model,
                 List.of(
-                        new AiMessage("system", ANTI_INJECTION_PREFIX + SENSITIVITY_RULES + systemPrompt),
+                        new AiMessage("system", ANTI_INJECTION_PREFIX + sensitivityRules + systemPrompt),
                         new AiMessage("user", userPrompt)
                 ),
                 maxTokens

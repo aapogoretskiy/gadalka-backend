@@ -32,7 +32,8 @@ public record RangeReportDto(
             long threeCard,
             long horseshoe,
             long celticCross,
-            long numerologyWeek
+            long numerologyWeek,
+            long dream
     ) {}
 
     /** Платежи с разбивкой по валюте */

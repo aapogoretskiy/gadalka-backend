@@ -9,6 +9,6 @@ public enum DiaryFeatureType {
     NUMEROLOGY_DAY,
     NUMEROLOGY_WEEK,
     DAILY_HOROSCOPE,
-    /** Событие просмотра/пересчёта нумерологического портрета личности */
-    NUMEROLOGY_PORTRAIT
+    NUMEROLOGY_PORTRAIT,
+    DREAM
 }

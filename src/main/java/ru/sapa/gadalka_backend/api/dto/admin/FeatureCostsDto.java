@@ -10,5 +10,6 @@ public record FeatureCostsDto(
         int horseshoe,
         int celticCross,
         int compatibilityUnlock,
-        int numerologyWeek
+        int numerologyWeek,
+        int dream
 ) {}

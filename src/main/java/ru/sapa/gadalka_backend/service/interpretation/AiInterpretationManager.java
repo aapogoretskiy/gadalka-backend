@@ -36,6 +36,16 @@ public class AiInterpretationManager {
         return getService(provider).interpretDailyHoroscope(zodiacSign, date);
     }
 
+    public DreamContent interpretDream(String provider,
+                                       String dreamText,
+                                       List<DreamContent.SymbolMeaning> selectedSymbols,
+                                       ZodiacSign zodiacSign,
+                                       int lifePathNumber) {
+        log.debug("Разбор сна через провайдер '{}', символов: {}, длина текста: {}",
+                provider, selectedSymbols.size(), dreamText != null ? dreamText.length() : 0);
+        return getService(provider).interpretDream(dreamText, selectedSymbols, zodiacSign, lifePathNumber);
+    }
+
     public String classifySensitiveContent(String provider, String question) {
         log.debug("Классификация чувствительного контента через провайдер '{}'", provider);
         return getService(provider).classifySensitiveContent(question);
