@@ -10,11 +10,16 @@ import org.springframework.web.server.ResponseStatusException;
 import ru.sapa.gadalka_backend.api.dto.profile.UpdateProfileRequest;
 import ru.sapa.gadalka_backend.service.UserProfileService;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyDayResponse;
+import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyMonthResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyPortraitResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
 import ru.sapa.gadalka_backend.service.NumerologyDayService;
+import ru.sapa.gadalka_backend.service.NumerologyMonthService;
 import ru.sapa.gadalka_backend.service.NumerologyPortraitService;
 import ru.sapa.gadalka_backend.service.NumerologyWeekService;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 @RestController
 @RequiredArgsConstructor
@@ -24,6 +29,7 @@ public class NumerologyController extends BaseController {
 
     private final NumerologyDayService numerologyDayService;
     private final NumerologyWeekService numerologyWeekService;
+    private final NumerologyMonthService numerologyMonthService;
     private final NumerologyPortraitService numerologyPortraitService;
     private final UserProfileService userProfileService;
 
@@ -85,5 +91,46 @@ public class NumerologyController extends BaseController {
     public NumerologyWeekResponse getCurrentWeek(HttpServletRequest request) {
         return numerologyWeekService.peekWeek(resolveUser(request).getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Действующего расклада на неделю нет"));
+    }
+
+    @GetMapping("/week/by-date")
+    @Operation(
+            summary = "Расклад на неделю по конкретной дате начала",
+            description = """
+                    Тихая бесплатная отдача уже существующего расклада с точной датой начала недели
+                    (формат YYYY-MM-DD) — НЕ создаёт новый расклад и НЕ списывает знаки.
+                    Используется при переходе на одну из 4 недель внутри уже купленного месячного
+                    разбора (они создаются бесплатно при покупке месяца), а также для повторного
+                    открытия любой ранее полученной недели. 404, если расклада с такой датой нет.
+                    """)
+    public NumerologyWeekResponse getWeekByDate(HttpServletRequest request, @RequestParam String date) {
+        LocalDate weekStart = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+        return numerologyWeekService.peekByDate(resolveUser(request).getId(), weekStart)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Расклада на эту неделю нет"));
+    }
+
+    @GetMapping("/month")
+    @Operation(
+            summary = "Месячный нумерологический разбор",
+            description = """
+                    Платный разбор на текущий календарный месяц. Если у пользователя уже есть оплаченный
+                    разбор на этот месяц, повторное списание не происходит — отдаётся тот же разбор.
+                    4 недели внутри месяца включены в стоимость и создаются бесплатно.
+                    Требует указанной даты рождения в профиле (422) и достаточного баланса знаков (402).
+                    """)
+    public NumerologyMonthResponse getMonth(HttpServletRequest request) {
+        return numerologyMonthService.getMonth(resolveUser(request).getId());
+    }
+
+    @GetMapping("/month/current")
+    @Operation(
+            summary = "Тихая проверка действующего разбора на месяц",
+            description = """
+                    В отличие от /month — НЕ создаёт новый разбор и НЕ списывает знаки.
+                    Возвращает уже оплаченный разбор на текущий месяц, если он есть, иначе 404.
+                    """)
+    public NumerologyMonthResponse getCurrentMonth(HttpServletRequest request) {
+        return numerologyMonthService.peekMonth(resolveUser(request).getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Действующего разбора на месяц нет"));
     }
 }

@@ -33,6 +33,7 @@ public record RangeReportDto(
             long horseshoe,
             long celticCross,
             long numerologyWeek,
+            long numerologyMonth,
             long dream
     ) {}
 

@@ -20,6 +20,7 @@ import ru.sapa.gadalka_backend.repository.DreamReadingRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyMonthReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
@@ -49,6 +50,7 @@ public class ReportService {
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
+    private final NumerologyMonthReadingRepository numerologyMonthReadingRepository;
     private final DreamReadingRepository dreamReadingRepository;
     private final DailyCardRepository dailyCardRepository;
     private final UserVisitRepository userVisitRepository;
@@ -146,10 +148,11 @@ public class ReportService {
         long numerology  = numerologyDayReadingRepository.countByDateGreaterThanEqualWithSource(today, source);
         long dailyCard   = dailyCardRepository.countByDateGreaterThanEqualWithSource(today, source);
         long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
+        long numerologyMonth = numerologyMonthReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
         long dream       = dreamReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
-        long total       = threeCard + horseshoe + celticCross + compatibility + numerology + dailyCard + numerologyWeek + dream;
+        long total       = threeCard + horseshoe + celticCross + compatibility + numerology + dailyCard + numerologyWeek + numerologyMonth + dream;
 
-        return new ActionsTodayDto(total, threeCard, horseshoe, celticCross, compatibility, numerology, dailyCard, numerologyWeek, dream);
+        return new ActionsTodayDto(total, threeCard, horseshoe, celticCross, compatibility, numerology, dailyCard, numerologyWeek, numerologyMonth, dream);
     }
 
     // ── Повторные посещения ───────────────────────────────────────────────────
@@ -184,9 +187,10 @@ public class ReportService {
 
         long compatibility = compatibilityReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
         long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
+        long numerologyMonth = numerologyMonthReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
         long dream = dreamReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
 
-        long actionsTotal = fortunesTotal + compatibility + numerologyWeek + dream;
+        long actionsTotal = fortunesTotal + compatibility + numerologyWeek + numerologyMonth + dream;
 
         long returningUsers = userVisitRepository.countUsersWithMultipleVisitsBetweenWithSource(from, to, source);
 
@@ -201,7 +205,7 @@ public class ReportService {
                 newUsers,
                 new RangeReportDto.FortunesRangeDto(fortunesTotal, threeCard, horseshoe, celticCross),
                 compatibility,
-                new RangeReportDto.ActionsRangeDto(actionsTotal, compatibility, threeCard, horseshoe, celticCross, numerologyWeek, dream),
+                new RangeReportDto.ActionsRangeDto(actionsTotal, compatibility, threeCard, horseshoe, celticCross, numerologyWeek, numerologyMonth, dream),
                 returningUsers,
                 new RangeReportDto.PaymentsRangeDto(rubKopecks, rubTransactions, stars, starsTransactions)
         );

@@ -9,5 +9,6 @@ public record ActionsTodayDto(
         long numerology,
         long dailyCard,
         long numerologyWeek,
+        long numerologyMonth,
         long dream
 ) {}

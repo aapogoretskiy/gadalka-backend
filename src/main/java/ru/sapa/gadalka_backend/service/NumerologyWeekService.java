@@ -56,7 +56,7 @@ public class NumerologyWeekService {
 
         return repository.findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqual(userId, today, today)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, today));
+                .orElseGet(() -> createAndSave(userId, today, true));
     }
 
     /**
@@ -72,7 +72,31 @@ public class NumerologyWeekService {
                 .map(this::toResponse);
     }
 
-    private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart) {
+    /**
+     * Тихая проверка расклада на КОНКРЕТНУЮ дату начала недели — используется, когда пользователь
+     * открывает одну из 4 недель внутри уже купленного месячного разбора (см. NumerologyMonthService).
+     * НЕ создаёт расклад и НЕ списывает знаки — просто отдаёт уже существующий (созданный бесплатно
+     * при покупке месяца через {@link #createIncludedWeek}) или пусто, если такого ещё нет.
+     */
+    @Transactional
+    public Optional<NumerologyWeekResponse> peekByDate(Long userId, LocalDate weekStart) {
+        return repository.findByUserIdAndWeekStartDate(userId, weekStart)
+                .map(this::toResponse);
+    }
+
+    /**
+     * Создаёт (если ещё не существует) расклад на неделю с произвольной датой начала БЕЗ списания
+     * знаков — используется при покупке месячного разбора: 4 недели месяца входят в его стоимость
+     * и открываются пользователю бесплатно и сразу (см. NumerologyMonthService.createAndSave).
+     */
+    @Transactional
+    public NumerologyWeekResponse createIncludedWeek(Long userId, LocalDate weekStart) {
+        return repository.findByUserIdAndWeekStartDate(userId, weekStart)
+                .map(this::toResponse)
+                .orElseGet(() -> createAndSave(userId, weekStart, false));
+    }
+
+    private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart, boolean chargeCredits) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -122,7 +146,9 @@ public class NumerologyWeekService {
         String finance = contentService.weekFinance(weekNumber);
 
         int weekCost = featureCostService.getNumerologyWeekCost();
-        fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_WEEK, weekCost);
+        if (chargeCredits) {
+            fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_WEEK, weekCost);
+        }
 
         NumerologyWeekResponse response = new NumerologyWeekResponse(
                 null,
@@ -158,8 +184,13 @@ public class NumerologyWeekService {
 
         diaryService.save(userId, DiaryFeatureType.NUMEROLOGY_WEEK, reading.getId(), response);
 
-        log.info("Недельный нумерологический расклад создан и оплачен: userId={}, weekStart={}, weekEnd={}, списано={} знаков",
-                userId, weekStart, weekEnd, weekCost);
+        if (chargeCredits) {
+            log.info("Недельный нумерологический расклад создан и оплачен: userId={}, weekStart={}, weekEnd={}, списано={} знаков",
+                    userId, weekStart, weekEnd, weekCost);
+        } else {
+            log.info("Недельный нумерологический расклад создан бесплатно (включён в месячный разбор): userId={}, weekStart={}, weekEnd={}",
+                    userId, weekStart, weekEnd);
+        }
 
         return toResponse(reading);
     }

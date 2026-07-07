@@ -11,5 +11,6 @@ public record FeatureCostsDto(
         int celticCross,
         int compatibilityUnlock,
         int numerologyWeek,
+        int numerologyMonth,
         int dream
 ) {}

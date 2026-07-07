@@ -135,6 +135,8 @@ public class DiaryService {
             case DAILY_CARD       -> resolveDailyCardPayload(user.getId(), referenceId);
             case NUMEROLOGY_DAY   -> resolveNumerologyDayPayload(user.getId(), referenceId);
             case NUMEROLOGY_WEEK  -> resolveNumerologyWeekPayload(user.getId(), referenceId);
+            case NUMEROLOGY_MONTH -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Месячный разбор сохраняется в дневник автоматически");
             case DAILY_HOROSCOPE  -> throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Гороскоп на день сохраняется в дневник автоматически");
             case NUMEROLOGY_PORTRAIT -> throw new ResponseStatusException(

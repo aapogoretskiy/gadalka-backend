@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyMonthLifeAreaDto;
+import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyMonthLifeAreasDto;
 
 import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
@@ -129,6 +131,62 @@ public class NumerologyContentService {
     /** Короткая фраза-совет для пикового дня недели (по коду конкретного дня). */
     public String peakAdvice(int dayCode) {
         return textOrNull(numberNode(dayCode), "peakAdvice");
+    }
+
+    // ── Контент месячного разбора (по числу месяца) ─────────────────────────────
+    // Тексты в JSON содержат плейсхолдеры {Month}/{month}/{monthPrep}, которые здесь
+    // подставляются под конкретный календарный месяц (1-12) — один и тот же архетип
+    // числа должен звучать корректно и для июля, и для декабря.
+
+    private static final String[] MONTHS_NOMINATIVE = {
+        "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+        "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+    };
+    private static final String[] MONTHS_PREPOSITIONAL = {
+        "январе", "феврале", "марте", "апреле", "мае", "июне",
+        "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"
+    };
+
+    public String monthNameNominative(int calendarMonth) {
+        return MONTHS_NOMINATIVE[calendarMonth - 1];
+    }
+
+    public String monthMainTheme(int monthNumber, int calendarMonth) {
+        return applyMonthPlaceholders(textOrNull(numberNode(monthNumber), "monthMainTheme"), calendarMonth);
+    }
+
+    public String monthWhatToAvoid(int monthNumber, int calendarMonth) {
+        return applyMonthPlaceholders(textOrNull(numberNode(monthNumber), "monthWhatToAvoid"), calendarMonth);
+    }
+
+    public String monthAdvice(int monthNumber, int calendarMonth) {
+        return applyMonthPlaceholders(textOrNull(numberNode(monthNumber), "monthAdvice"), calendarMonth);
+    }
+
+    public NumerologyMonthLifeAreasDto monthLifeAreas(int monthNumber, int calendarMonth) {
+        JsonNode areas = numberNode(monthNumber).get("monthLifeAreas");
+        return new NumerologyMonthLifeAreasDto(
+                monthLifeArea(areas, "relationships", calendarMonth),
+                monthLifeArea(areas, "career", calendarMonth),
+                monthLifeArea(areas, "finance", calendarMonth),
+                monthLifeArea(areas, "health", calendarMonth)
+        );
+    }
+
+    private NumerologyMonthLifeAreaDto monthLifeArea(JsonNode areas, String key, int calendarMonth) {
+        JsonNode node = areas.get(key);
+        return new NumerologyMonthLifeAreaDto(
+                node.get("score").asInt(),
+                applyMonthPlaceholders(node.get("text").asText(), calendarMonth)
+        );
+    }
+
+    private String applyMonthPlaceholders(String text, int calendarMonth) {
+        if (text == null) return null;
+        return text
+                .replace("{Month}", monthNameNominative(calendarMonth))
+                .replace("{month}", monthNameNominative(calendarMonth).toLowerCase())
+                .replace("{monthPrep}", MONTHS_PREPOSITIONAL[calendarMonth - 1]);
     }
 
     private String textOrNull(JsonNode node, String field) {

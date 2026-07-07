@@ -9,5 +9,6 @@ public enum FeedbackTargetType {
     FORTUNE,
     COMPATIBILITY,
     NUMEROLOGY_WEEK,
+    NUMEROLOGY_MONTH,
     DREAM
 }

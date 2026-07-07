@@ -10,5 +10,6 @@ public class SystemConfigConstants {
     public static final String FEATURE_COST_CELTIC_CROSS = "FEATURE_COST_CELTIC_CROSS";
     public static final String FEATURE_COST_COMPATIBILITY_UNLOCK = "FEATURE_COST_COMPATIBILITY_UNLOCK";
     public static final String FEATURE_COST_NUMEROLOGY_WEEK = "FEATURE_COST_NUMEROLOGY_WEEK";
+    public static final String FEATURE_COST_NUMEROLOGY_MONTH = "FEATURE_COST_NUMEROLOGY_MONTH";
     public static final String FEATURE_COST_DREAM = "FEATURE_COST_DREAM";
 }
