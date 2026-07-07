@@ -54,9 +54,9 @@ public class NumerologyWeekService {
     public NumerologyWeekResponse getWeek(Long userId) {
         LocalDate today = LocalDate.now();
 
-        return repository.findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqual(userId, today, today)
+        return currentWeekReading(userId, today)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, today, true));
+                .orElseGet(() -> createAndSave(userId, today, today.plusDays(6), true));
     }
 
     /**
@@ -68,8 +68,19 @@ public class NumerologyWeekService {
     public Optional<NumerologyWeekResponse> peekWeek(Long userId) {
         LocalDate today = LocalDate.now();
 
-        return repository.findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqual(userId, today, today)
-                .map(this::toResponse);
+        return currentWeekReading(userId, today).map(this::toResponse);
+    }
+
+    /**
+     * Находит расклад, покрывающий сегодняшний день. Если у пользователя есть отдельно купленная
+     * неделя (плавающее окно от даты покупки) и недели, включённые в купленный месяц (фиксированные
+     * календарные блоки), их диапазоны могут пересекаться — в этом случае берём запись с самой
+     * поздней датой начала как самую «актуальную» на сегодня.
+     */
+    private Optional<NumerologyWeekReading> currentWeekReading(Long userId, LocalDate today) {
+        List<NumerologyWeekReading> matches = repository
+                .findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqualOrderByWeekStartDateDesc(userId, today, today);
+        return matches.isEmpty() ? Optional.empty() : Optional.of(matches.get(0));
     }
 
     /**
@@ -88,15 +99,26 @@ public class NumerologyWeekService {
      * Создаёт (если ещё не существует) расклад на неделю с произвольной датой начала БЕЗ списания
      * знаков — используется при покупке месячного разбора: 4 недели месяца входят в его стоимость
      * и открываются пользователю бесплатно и сразу (см. NumerologyMonthService.createAndSave).
+     * Стандартная неделя — ровно 7 дней (weekStart + 6).
      */
     @Transactional
     public NumerologyWeekResponse createIncludedWeek(Long userId, LocalDate weekStart) {
-        return repository.findByUserIdAndWeekStartDate(userId, weekStart)
-                .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, weekStart, false));
+        return createIncludedWeek(userId, weekStart, weekStart.plusDays(6));
     }
 
-    private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart, boolean chargeCredits) {
+    /**
+     * То же самое, но с явной датой окончания — нужно для «хвостового» 5-го блока месяца
+     * (29-е число и позже), который короче обычной недели: 1-3 дня в зависимости от длины
+     * календарного месяца (см. NumerologyMonthService.createAndSave).
+     */
+    @Transactional
+    public NumerologyWeekResponse createIncludedWeek(Long userId, LocalDate weekStart, LocalDate weekEnd) {
+        return repository.findByUserIdAndWeekStartDate(userId, weekStart)
+                .map(this::toResponse)
+                .orElseGet(() -> createAndSave(userId, weekStart, weekEnd, false));
+    }
+
+    private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart, LocalDate weekEnd, boolean chargeCredits) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -109,7 +131,6 @@ public class NumerologyWeekService {
         }
 
         LocalDate birthDate = profile.getBirthDate();
-        LocalDate weekEnd = weekStart.plusDays(6);
         int lifePathNumber = numerologyService.lifePathNumber(birthDate);
 
         List<NumerologyWeekDayDto> days = weekStart.datesUntil(weekEnd.plusDays(1))

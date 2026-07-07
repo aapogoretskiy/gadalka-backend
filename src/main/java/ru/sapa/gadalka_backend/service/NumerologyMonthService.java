@@ -28,9 +28,12 @@ import java.util.Optional;
 
 /**
  * Платный месячный нумерологический разбор — «матрёшка» поверх недельного: месяц разбит на 4
- * недельных блока по 7 дней от 1-го числа (1–7, 8–14, 15–21, 22–28/29/30/31), и каждый из них —
+ * недельных блока по 7 дней от 1-го числа (1–7, 8–14, 15–21, 22–28), и каждый из них —
  * это самый обычный {@link NumerologyWeekService} расклад, только созданный БЕСПЛАТНО
- * (входит в стоимость месяца, см. {@link NumerologyWeekService#createIncludedWeek}).
+ * (входит в стоимость месяца, см. {@link NumerologyWeekService#createIncludedWeek}). Если в
+ * месяце есть дни 29-31, к этим 4 добавляется короткий 5-й «хвостовой» блок (1-3 дня, до конца
+ * месяца) — чтобы вообще все дни месяца попадали в какой-нибудь недельный блок, а не только
+ * первые 28.
  * <p>
  * Окно расклада — календарный месяц. Пока today внутри [monthStart; monthEnd], повторные открытия
  * экрана отдают тот же сохранённый разбор бесплатно — повторное списание не происходит.
@@ -105,24 +108,32 @@ public class NumerologyMonthService {
                 })
                 .toList();
 
-        // 4 недельных блока по 7 дней от 1-го числа месяца: 1-7, 8-14, 15-21, 22-28
-        List<LocalDate> blockStarts = List.of(
-                monthStart,
-                monthStart.plusDays(7),
-                monthStart.plusDays(14),
-                monthStart.plusDays(21)
-        );
+        // 4 недельных блока по 7 дней от 1-го числа месяца: 1-7, 8-14, 15-21, 22-28.
+        // Плюс, если в месяце есть дни 29-31, добавляется короткий 5-й «хвостовой» блок
+        // (1-3 дня, до конца месяца) — иначе эти дни не попадали бы ни в одну неделю
+        // месяца, хотя формально участвуют в расчёте резонанса наравне со всеми
+        // остальными днями (см. allDays выше, там уже весь месяц целиком).
+        List<WeekBlock> blocks = new ArrayList<>();
+        blocks.add(new WeekBlock(monthStart, monthStart.plusDays(6)));
+        blocks.add(new WeekBlock(monthStart.plusDays(7), monthStart.plusDays(13)));
+        blocks.add(new WeekBlock(monthStart.plusDays(14), monthStart.plusDays(20)));
+        blocks.add(new WeekBlock(monthStart.plusDays(21), monthStart.plusDays(27)));
+        LocalDate tailStart = monthStart.plusDays(28); // 29-е число месяца
+        if (!tailStart.isAfter(monthEnd)) {
+            blocks.add(new WeekBlock(tailStart, monthEnd));
+        }
 
-        List<NumerologyMonthKeyDateDto> keyDates = buildKeyDates(allDays, blockStarts);
+        List<NumerologyMonthKeyDateDto> keyDates = buildKeyDates(allDays, blocks);
 
         int monthCost = featureCostService.getNumerologyMonthCost();
         fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_MONTH, monthCost);
 
         // Недели внутри месяца включены в его стоимость — создаём (или переиспользуем уже
-        // существующие) 4 недельных расклада БЕСПЛАТНО, знаки за них не списываются.
+        // существующие) 4-5 недельных раскладов БЕСПЛАТНО, знаки за них не списываются.
         List<NumerologyMonthWeekPreviewDto> weekPreviews = new ArrayList<>();
-        for (int i = 0; i < blockStarts.size(); i++) {
-            NumerologyWeekResponse week = numerologyWeekService.createIncludedWeek(userId, blockStarts.get(i));
+        for (int i = 0; i < blocks.size(); i++) {
+            WeekBlock block = blocks.get(i);
+            NumerologyWeekResponse week = numerologyWeekService.createIncludedWeek(userId, block.start(), block.end());
             int weekResonance = numerologyService.numberAffinity(lifePathNumber, week.weekNumber());
             weekPreviews.add(new NumerologyMonthWeekPreviewDto(
                     i + 1,
@@ -170,17 +181,18 @@ public class NumerologyMonthService {
     }
 
     /**
-     * 4 ключевые даты месяца. «Пик» и «Осторожно» — это ГЛОБАЛЬНЫЙ лучший и худший день
+     * Ключевые даты месяца. «Пик» и «Осторожно» — это ГЛОБАЛЬНЫЙ лучший и худший день
      * резонанса за весь месяц (та же формула personalDayCode + numberAffinity, что и на
      * экране недели) — иначе «Осторожно» может ссылаться на день, который сам по себе
      * благоприятный, просто слабее других кандидатов, и это будет противоречить тому,
      * что покажет открытая неделя для той же даты.
      * <p>
      * «Решения» и «Встреча» — нейтральные по смыслу бейджи (не про хорошо/плохо), их
-     * распределяем по недельным блокам, не занятым пиком/осторожно, чтобы даты были
-     * равномерно раскиданы по месяцу, а не скучены рядом.
+     * распределяем по недельным блокам (включая короткий «хвостовой» 5-й блок, если он
+     * есть), не занятым пиком/осторожно, чтобы даты были равномерно раскиданы по месяцу,
+     * а не скучены рядом. Благодаря 5-му блоку дни 29-31 тоже участвуют в этом отборе.
      */
-    private List<NumerologyMonthKeyDateDto> buildKeyDates(List<DayResonance> allDays, List<LocalDate> blockStarts) {
+    private List<NumerologyMonthKeyDateDto> buildKeyDates(List<DayResonance> allDays, List<WeekBlock> blocks) {
         DayResonance peak = allDays.stream()
                 .max(Comparator.comparingInt(DayResonance::score))
                 .orElseThrow();
@@ -189,10 +201,9 @@ public class NumerologyMonthService {
                 .orElseThrow();
 
         List<DayResonance> blockChampions = new ArrayList<>();
-        for (LocalDate blockStart : blockStarts) {
-            LocalDate blockEnd = blockStart.plusDays(6);
+        for (WeekBlock block : blocks) {
             allDays.stream()
-                    .filter(d -> !d.date().isBefore(blockStart) && !d.date().isAfter(blockEnd))
+                    .filter(d -> !d.date().isBefore(block.start()) && !d.date().isAfter(block.end()))
                     .filter(d -> !d.date().equals(peak.date()) && !d.date().equals(caution.date()))
                     .max(Comparator.comparingInt(DayResonance::score))
                     .ifPresent(blockChampions::add);
@@ -207,11 +218,15 @@ public class NumerologyMonthService {
         result.add(new NumerologyMonthKeyDateDto(caution.date(), "Осторожно", contentService.whatToAvoid(caution.dayCode())));
         if (!remaining.isEmpty()) {
             result.add(new NumerologyMonthKeyDateDto(remaining.get(0).date(), "Решения",
-                    "День решений — то, что вы выберете сегодня, повлияет на ближайшие недели."));
+                    "День решений. То, что вы выберете сегодня — согласиться или отказаться, ждать или "
+                    + "действовать — задаст тон на ближайшие недели. Не откладывайте важный разговор "
+                    + "или подпись под документом на потом: сейчас у вас есть ясность, которой не будет позже."));
         }
         if (remaining.size() > 1) {
             result.add(new NumerologyMonthKeyDateDto(remaining.get(remaining.size() - 1).date(), "Встреча",
-                    "Возможна неожиданная встреча или предложение — не пропустите."));
+                    "Возможна неожиданная встреча, звонок или предложение, которое на первый взгляд "
+                    + "покажется случайным. Присмотритесь к новым именам и знакомствам этого дня — "
+                    + "именно из таких случайностей часто вырастает то, что меняет ход месяца."));
         }
 
         return result.stream().sorted(Comparator.comparing(NumerologyMonthKeyDateDto::date)).toList();
@@ -254,5 +269,9 @@ public class NumerologyMonthService {
     }
 
     private record DayResonance(LocalDate date, int dayCode, int score) {
+    }
+
+    /** Границы одного недельного блока внутри месяца (включительно). */
+    private record WeekBlock(LocalDate start, LocalDate end) {
     }
 }

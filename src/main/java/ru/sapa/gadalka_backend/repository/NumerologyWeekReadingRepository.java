@@ -13,7 +13,15 @@ import java.util.Optional;
 
 public interface NumerologyWeekReadingRepository extends JpaRepository<NumerologyWeekReading, Long> {
 
-    Optional<NumerologyWeekReading> findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqual(
+    /**
+     * Все недельные расклады пользователя, чей диапазон [weekStartDate; weekEndDate] покрывает
+     * заданную дату. В норме такая запись ровно одна, но если у пользователя есть и отдельно
+     * купленная неделя (плавающее окно от даты покупки), и недели, включённые в купленный месяц
+     * (фиксированные календарные блоки 1-7/8-14/15-21/22-28/29-31) — их диапазоны могут
+     * пересекаться, не совпадая по дате начала. Поэтому метод возвращает список, отсортированный
+     * по дате начала по убыванию: самая поздняя дата начала — самая «актуальная» на сегодня неделя.
+     */
+    List<NumerologyWeekReading> findByUserIdAndWeekStartDateLessThanEqualAndWeekEndDateGreaterThanEqualOrderByWeekStartDateDesc(
             Long userId, LocalDate startsBefore, LocalDate endsAfter);
     Optional<NumerologyWeekReading> findByIdAndUserId(Long id, Long userId);
 
