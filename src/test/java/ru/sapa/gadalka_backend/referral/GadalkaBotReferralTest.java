@@ -15,6 +15,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.stars.TelegramStarsService;
@@ -42,6 +43,7 @@ class GadalkaBotReferralTest {
     @Mock private ReferralService referralService;
     @Mock private PaymentService paymentService;
     @Mock private TelegramStarsService telegramStarsService;
+    @Mock private UserRepository userRepository;
 
     private GadalkaTelegramBot bot;
 
@@ -50,7 +52,7 @@ class GadalkaBotReferralTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        bot = new GadalkaTelegramBot(telegramClient, referralService, paymentService, telegramStarsService);
+        bot = new GadalkaTelegramBot(telegramClient, referralService, paymentService, telegramStarsService, userRepository);
         setField(bot, "botToken", "test_token");
         setField(bot, "appUrl", APP_URL);
     }
