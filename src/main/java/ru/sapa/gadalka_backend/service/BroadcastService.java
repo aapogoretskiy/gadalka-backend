@@ -163,7 +163,23 @@ public class BroadcastService {
                                    byte[] photoBytes,
                                    String photoFileName,
                                    String[] cachedFileId) {
-        List<User> admins = Arrays.stream(adminProperties.getTelegramIds().split(","))
+        List<User> admins = resolveAdmins();
+
+        int sent = 0;
+        int failed = 0;
+
+        for (User admin : admins) {
+            boolean ok = sendToUser(admin, message, giftEnabled, giftAmount, personalized, photoBytes, photoFileName, cachedFileId);
+            if (ok) sent++; else failed++;
+            sleep();
+        }
+
+        log.info("Рассылка завершена (администраторам): найдено={}, отправлено={}, ошибок={}", admins.size(), sent, failed);
+    }
+
+    /** Резолвит {@code ADMIN_TELEGRAM_IDS} из конфига в зарегистрированных пользователей. */
+    private List<User> resolveAdmins() {
+        return Arrays.stream(adminProperties.getTelegramIds().split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(id -> {
@@ -176,17 +192,15 @@ public class BroadcastService {
                 })
                 .filter(Objects::nonNull)
                 .toList();
+    }
 
-        int sent = 0;
-        int failed = 0;
-
-        for (User admin : admins) {
-            boolean ok = sendToUser(admin, message, giftEnabled, giftAmount, personalized, photoBytes, photoFileName, cachedFileId);
-            if (ok) sent++; else failed++;
-            sleep();
-        }
-
-        log.info("Рассылка завершена (администраторам): найдено={}, отправлено={}, ошибок={}", admins.size(), sent, failed);
+    /**
+     * Внутренние ID администраторов — используется, когда нужен просто список ID
+     * без похода в Telegram (например, для рассылки во "Входящие" — см. InboxService,
+     * AdminController#broadcast).
+     */
+    public List<Long> resolveAdminUserIds() {
+        return resolveAdmins().stream().map(User::getId).toList();
     }
 
     /**

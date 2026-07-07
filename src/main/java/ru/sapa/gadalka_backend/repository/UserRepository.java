@@ -281,4 +281,20 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * Показывается в админке рядом с сегментами рассылки — см. {@link #countInactiveUsers}.
      */
     long countByNotificationsAllowedTrue();
+
+    /**
+     * ID пользователей, недостижимых через Telegram (notificationsAllowed = false) —
+     * сегмент "Отключили уведомления от бота" для рассылки во Входящие (см. миграцию V60,
+     * InboxService). Для этого сегмента нет смысла слать в Telegram — только в приложение.
+     */
+    @Query("SELECT u.id FROM User u WHERE u.notificationsAllowed = false")
+    List<Long> findIdsByNotificationsAllowedFalse();
+
+    /**
+     * Все ID пользователей — используется при рассылке во "Входящие" на аудиторию "всем"
+     * (в отличие от Telegram-рассылки, которая стримит батчами, тут нужен полный список
+     * сразу, чтобы одной пачкой создать записи в inbox_message_recipients).
+     */
+    @Query("SELECT u.id FROM User u")
+    List<Long> findAllIds();
 }

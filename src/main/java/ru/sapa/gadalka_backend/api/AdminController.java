@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.AdminDreamSymbolDto;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
+import ru.sapa.gadalka_backend.api.dto.admin.InboxMessageStatsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.SensitiveQueryLogDto;
 import ru.sapa.gadalka_backend.api.dto.admin.payment.TransactionDetailsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
@@ -49,6 +50,7 @@ import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.AdminPaymentService;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FeatureCostService;
+import ru.sapa.gadalka_backend.service.InboxService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
@@ -85,6 +87,12 @@ public class AdminController {
     private static final String SEGMENT_INACTIVE = "INACTIVE";
 
     /**
+     * Именованный сегмент рассылки: недостижимые через Telegram (notificationsAllowed = false).
+     * Для них имеет смысл только канал "Входящие" — см. broadcast() ниже.
+     */
+    private static final String SEGMENT_UNREACHABLE = "UNREACHABLE";
+
+    /**
      * Минимальный возраст регистрации для попадания в сегмент INACTIVE (дни).
      * Свежих пользователей не трогаем — они ещё могут дойти до первого действия сами.
      */
@@ -119,6 +127,7 @@ public class AdminController {
     private final ObjectMapper objectMapper;
     private final GadalkaTelegramBot telegramBot;
     private final BroadcastService broadcastService;
+    private final InboxService inboxService;
     private final ReportService reportService;
     private final ReferralStatsService referralStatsService;
     private final SupportTicketService supportTicketService;
@@ -658,8 +667,19 @@ public class AdminController {
      * </ul>
      *
      * <p>Запускает массовую рассылку в фоновом потоке и сразу возвращает 200.
-     * Приоритет аудитории: userIds > onlyAdmins > все пользователи.
-     * Если {@code giftAmount} > 0 — каждому получателю начисляются знаки.
+     * Приоритет аудитории: userIds > segment > onlyAdmins > все пользователи.
+     * Если {@code giftAmount} > 0 — каждому получателю начисляются знаки (только
+     * при отправке в Telegram — см. проверку ниже).
+     *
+     * <p>Два независимых канала доставки — {@code toTelegram} и {@code toInbox},
+     * можно выбрать любой один или оба сразу:
+     * <ul>
+     *   <li>Telegram — как раньше, через {@link BroadcastService}, зависит от
+     *       {@code User.notificationsAllowed}.</li>
+     *   <li>"Входящие" — гарантированная доставка внутри приложения (см. {@link InboxService}
+     *       и миграцию V60), не зависит от Telegram вообще. Подарок знаков здесь не
+     *       поддерживается — сознательно, чтобы не усложнять начисление на два канала сразу.</li>
+     * </ul>
      */
     @PostMapping(value = "/broadcast", consumes = "multipart/form-data")
     public ResponseEntity<?> broadcast(
@@ -673,6 +693,19 @@ public class AdminController {
             return ResponseEntity.badRequest().body(Map.of("message", "message не может быть пустым"));
         }
 
+        // По умолчанию (старые клиенты админки без поля toTelegram) — считаем, что канал Telegram включён.
+        boolean toTelegramChannel = !Boolean.FALSE.equals(body.toTelegram());
+        boolean toInboxChannel = Boolean.TRUE.equals(body.toInbox());
+
+        if (!toTelegramChannel && !toInboxChannel) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Нужно выбрать хотя бы один канал отправки"));
+        }
+        boolean giftEnabled = body.giftAmount() != null && body.giftAmount() > 0;
+        if (toInboxChannel && giftEnabled) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Подарок знаков доступен только при отправке в Telegram — уберите его или отключите канал «Входящие»"));
+        }
+
         byte[] photoBytes = (photo != null && !photo.isEmpty()) ? photo.getBytes() : null;
         String photoFileName = (photo != null && !photo.isEmpty()) ? photo.getOriginalFilename() : null;
 
@@ -680,11 +713,14 @@ public class AdminController {
         // механизм BroadcastService без изменений.
         // Приоритет аудитории: userIds > segment > onlyAdmins > все пользователи.
         List<Long> userIds = body.userIds();
-        boolean bySegment = (userIds == null || userIds.isEmpty()) && SEGMENT_INACTIVE.equals(body.segment());
+        boolean bySegment = (userIds == null || userIds.isEmpty())
+                && (SEGMENT_INACTIVE.equals(body.segment()) || SEGMENT_UNREACHABLE.equals(body.segment()));
         if (bySegment) {
-            userIds = userRepository.findInactiveUserIds(OffsetDateTime.now().minusDays(INACTIVE_SEGMENT_MIN_AGE_DAYS));
+            userIds = SEGMENT_UNREACHABLE.equals(body.segment())
+                    ? userRepository.findIdsByNotificationsAllowedFalse()
+                    : userRepository.findInactiveUserIds(OffsetDateTime.now().minusDays(INACTIVE_SEGMENT_MIN_AGE_DAYS));
             if (userIds.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("message", "В сегменте «неактивированные» нет получателей"));
+                return ResponseEntity.badRequest().body(Map.of("message", "В выбранном сегменте нет получателей"));
             }
         }
 
@@ -692,22 +728,35 @@ public class AdminController {
         boolean toSelected = userIds != null && !userIds.isEmpty();
         boolean toAll = !toAdmins && !toSelected;
 
-        log.info("Admin {} запустил рассылку: toAll={}, toAdmins={}, toSelected={}, segment={}, giftAmount={}, hasPhoto={}",
+        log.info("Admin {} запустил рассылку: toAll={}, toAdmins={}, toSelected={}, segment={}, giftAmount={}, hasPhoto={}, toTelegram={}, toInbox={}",
                 adminId,
                 toAll,
                 toAdmins,
                 toSelected ? userIds.size() : 0,
                 bySegment ? body.segment() : null,
                 body.giftAmount(),
-                photoBytes != null);
+                photoBytes != null,
+                toTelegramChannel,
+                toInboxChannel);
 
-        broadcastService.broadcast(body.message(), body.giftAmount(), userIds, photoBytes, photoFileName, toAdmins);
+        if (toTelegramChannel) {
+            broadcastService.broadcast(body.message(), body.giftAmount(), userIds, photoBytes, photoFileName, toAdmins);
+        }
+        if (toInboxChannel) {
+            List<Long> inboxUserIds = toSelected ? userIds
+                    : toAdmins ? broadcastService.resolveAdminUserIds()
+                    : userRepository.findAllIds();
+            inboxService.send(body.message(), inboxUserIds, adminId);
+        }
 
         String info = toAdmins ? "администраторам"
-                : bySegment ? "неактивированным (" + userIds.size() + ")"
+                : bySegment ? "сегменту «" + body.segment() + "» (" + userIds.size() + ")"
                 : toSelected ? "выбранным (" + userIds.size() + ")"
                 : "всем пользователям";
-        return ResponseEntity.ok(Map.of("message", "Рассылка запущена " + info));
+        String channels = toTelegramChannel && toInboxChannel ? "Telegram + Входящие"
+                : toInboxChannel ? "Входящие"
+                : "Telegram";
+        return ResponseEntity.ok(Map.of("message", "Рассылка запущена (" + channels + "): " + info));
     }
 
     /**
@@ -733,6 +782,19 @@ public class AdminController {
                 "notificationsAllowed", notificationsAllowed,
                 "totalUsers", totalUsers
         ));
+    }
+
+    /**
+     * GET /api/admin/inbox/messages
+     *
+     * <p>История отправок во "Входящие" — для каждого сообщения показывает, скольким
+     * пользователям оно ушло и сколько из них его прочитали (см. InboxService, миграцию V60).
+     */
+    @GetMapping("/inbox/messages")
+    public ResponseEntity<Page<InboxMessageStatsDto>> getInboxMessageHistory(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(inboxService.getMessageStats(PageRequest.of(page, size)));
     }
 
     /**
@@ -768,11 +830,17 @@ public class AdminController {
      * DTO для JSON-части запроса рассылки (part "data" в multipart/form-data).
      * Фото передаётся отдельной частью "photo", а не через это DTO.
      *
-     * @param onlyAdmins если true — рассылка только администраторам из ADMIN_TELEGRAM_IDS
-     * @param segment    именованный сегмент аудитории (пока только INACTIVE — «нулевые»
-     *                   пользователи без единого действия); резолвится в userIds на бэке
+     * @param onlyAdmins  если true — рассылка только администраторам из ADMIN_TELEGRAM_IDS
+     * @param segment     именованный сегмент аудитории: INACTIVE («нулевые» пользователи
+     *                    без единого действия) или UNREACHABLE (notificationsAllowed=false —
+     *                    недостижимые через Telegram); резолвится в userIds на бэке
+     * @param toTelegram  отправлять ли в Telegram (null трактуется как true — обратная
+     *                    совместимость со старым фронтом)
+     * @param toInbox     отправлять ли во "Входящие" внутри приложения (см. InboxService).
+     *                    Несовместимо с giftAmount > 0 — проверяется в broadcast()
      */
-    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, Boolean onlyAdmins, String segment) {}
+    record BroadcastRequest(String message, Integer giftAmount, List<Long> userIds, Boolean onlyAdmins, String segment,
+                             Boolean toTelegram, Boolean toInbox) {}
 
     /**
      * GET /api/admin/reports
