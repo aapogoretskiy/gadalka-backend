@@ -170,41 +170,47 @@ public class NumerologyMonthService {
     }
 
     /**
-     * 4 ключевые даты месяца — по одной на недельный блок (день с лучшим резонансом внутри блока),
-     * ранжированные по силе резонанса и подписанные бейджами: лучший день — «Пик», худший —
-     * «Осторожно», два оставшихся (в хронологическом порядке) — «Решения» и «Встреча».
+     * 4 ключевые даты месяца. «Пик» и «Осторожно» — это ГЛОБАЛЬНЫЙ лучший и худший день
+     * резонанса за весь месяц (та же формула personalDayCode + numberAffinity, что и на
+     * экране недели) — иначе «Осторожно» может ссылаться на день, который сам по себе
+     * благоприятный, просто слабее других кандидатов, и это будет противоречить тому,
+     * что покажет открытая неделя для той же даты.
+     * <p>
+     * «Решения» и «Встреча» — нейтральные по смыслу бейджи (не про хорошо/плохо), их
+     * распределяем по недельным блокам, не занятым пиком/осторожно, чтобы даты были
+     * равномерно раскиданы по месяцу, а не скучены рядом.
      */
     private List<NumerologyMonthKeyDateDto> buildKeyDates(List<DayResonance> allDays, List<LocalDate> blockStarts) {
-        List<DayResonance> candidates = new ArrayList<>();
+        DayResonance peak = allDays.stream()
+                .max(Comparator.comparingInt(DayResonance::score))
+                .orElseThrow();
+        DayResonance caution = allDays.stream()
+                .min(Comparator.comparingInt(DayResonance::score))
+                .orElseThrow();
+
+        List<DayResonance> blockChampions = new ArrayList<>();
         for (LocalDate blockStart : blockStarts) {
             LocalDate blockEnd = blockStart.plusDays(6);
             allDays.stream()
                     .filter(d -> !d.date().isBefore(blockStart) && !d.date().isAfter(blockEnd))
+                    .filter(d -> !d.date().equals(peak.date()) && !d.date().equals(caution.date()))
                     .max(Comparator.comparingInt(DayResonance::score))
-                    .ifPresent(candidates::add);
+                    .ifPresent(blockChampions::add);
         }
 
-        List<DayResonance> byScoreDesc = candidates.stream()
-                .sorted(Comparator.comparingInt(DayResonance::score).reversed())
-                .toList();
-
-        DayResonance peak = byScoreDesc.get(0);
-        DayResonance caution = byScoreDesc.get(byScoreDesc.size() - 1);
-
-        List<DayResonance> remaining = candidates.stream()
-                .filter(d -> d != peak && d != caution)
+        List<DayResonance> remaining = blockChampions.stream()
                 .sorted(Comparator.comparing(DayResonance::date))
                 .toList();
 
         List<NumerologyMonthKeyDateDto> result = new ArrayList<>();
         result.add(new NumerologyMonthKeyDateDto(peak.date(), "Пик", contentService.peakAdvice(peak.dayCode())));
         result.add(new NumerologyMonthKeyDateDto(caution.date(), "Осторожно", contentService.whatToAvoid(caution.dayCode())));
-        if (remaining.size() > 0) {
+        if (!remaining.isEmpty()) {
             result.add(new NumerologyMonthKeyDateDto(remaining.get(0).date(), "Решения",
                     "День решений — то, что вы выберете сегодня, повлияет на ближайшие недели."));
         }
         if (remaining.size() > 1) {
-            result.add(new NumerologyMonthKeyDateDto(remaining.get(1).date(), "Встреча",
+            result.add(new NumerologyMonthKeyDateDto(remaining.get(remaining.size() - 1).date(), "Встреча",
                     "Возможна неожиданная встреча или предложение — не пропустите."));
         }
 
