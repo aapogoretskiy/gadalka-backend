@@ -104,6 +104,21 @@ public class User {
     @Column(name = "total_actions_count", nullable = false)
     private int totalActionsCount;
 
+    /**
+     * Может ли бот проактивно писать этому пользователю в Telegram.
+     * <p>
+     * Ложно по умолчанию, потому что Mini App можно открыть по прямой ссылке
+     * ({@code ?startapp=CODE}), минуя {@code /start} — тогда профиль в БД создаётся,
+     * а чата с ботом не существует, и sendMessage падает с "chat not found".
+     * <p>
+     * Выставляется в true при получении ботом любого сообщения от пользователя
+     * (в т.ч. служебного write_access_allowed от {@code WebApp.requestWriteAccess()})
+     * и при успешной отправке рассылки/уведомления. Сбрасывается в false при ошибках
+     * Telegram "chat not found" / "bot was blocked by the user".
+     */
+    @Column(name = "notifications_allowed", nullable = false)
+    private boolean notificationsAllowed;
+
     @PrePersist
     void prePersist() {
         if (Objects.isNull(this.createdAt)) {

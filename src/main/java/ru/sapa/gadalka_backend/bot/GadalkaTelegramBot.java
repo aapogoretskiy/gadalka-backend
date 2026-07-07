@@ -22,6 +22,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.webapp.WebAppInfo;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.stars.TelegramStarsService;
@@ -38,6 +39,7 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     private final ReferralService referralService;
     private final PaymentService paymentService;
     private final TelegramStarsService starsService;
+    private final UserRepository userRepository;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -48,11 +50,13 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     public GadalkaTelegramBot(TelegramClient telegramClient,
                               ReferralService referralService,
                               PaymentService paymentService,
-                              TelegramStarsService starsService) {
+                              TelegramStarsService starsService,
+                              UserRepository userRepository) {
         this.telegramClient = telegramClient;
         this.referralService = referralService;
         this.paymentService = paymentService;
         this.starsService = starsService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -67,6 +71,10 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
 
     @Override
     public void consume(Update update) {
+        if (update.hasMessage()) {
+            markNotificationsAllowed(update.getMessage().getChatId(), update.getMessage().hasWriteAccessAllowed());
+        }
+
         // Обычные текстовые сообщения
         if (update.hasMessage() && update.getMessage().hasText()) {
             String text = update.getMessage().getText();
@@ -94,6 +102,25 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
         if (update.hasMessage() && update.getMessage().hasSuccessfulPayment()) {
             handleSuccessfulPayment(update.getMessage().getSuccessfulPayment());
         }
+    }
+
+    /**
+     * Помечает пользователя как достижимого для проактивных сообщений бота.
+     * <p>
+     * Вызывается на любое входящее сообщение — включая write_access_allowed,
+     * которое Telegram присылает после {@code WebApp.requestWriteAccess()} в Mini App.
+     * Если пользователя ещё нет в БД (например, самое первое /start до открытия
+     * Mini App) — просто ничего не делаем, флаг проставится позже при авторизации
+     * и первой успешной отправке.
+     */
+    private void markNotificationsAllowed(long chatId, boolean viaWriteAccessRequest) {
+        userRepository.findByTelegramId(chatId).ifPresent(user -> {
+            if (user.isNotificationsAllowed()) return;
+            user.setNotificationsAllowed(true);
+            userRepository.save(user);
+            log.info("notificationsAllowed=true для telegramId={} ({})",
+                    chatId, viaWriteAccessRequest ? "write_access_allowed" : "входящее сообщение");
+        });
     }
 
     private void setChatMenuButton(long chatId) {

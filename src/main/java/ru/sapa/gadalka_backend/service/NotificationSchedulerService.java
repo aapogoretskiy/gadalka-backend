@@ -14,9 +14,11 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.webapp.WebAppInfo;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.NotificationTime;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -37,6 +39,7 @@ public class NotificationSchedulerService {
 
     private final TelegramClient telegramClient;
     private final UserProfileRepository userProfileRepository;
+    private final UserRepository userRepository;
 
     @Value("${telegram.bot.app-url}")
     private String appUrl;
@@ -120,9 +123,10 @@ public class NotificationSchedulerService {
         int errorCount = 0;
 
         for (UserProfile profile : profiles) {
-            Long telegramId = profile.getUser().getTelegramId();
+            User user = profile.getUser();
+            Long telegramId = user.getTelegramId();
             // Персонализация: заменяем {name} на имя пользователя (или пустую строку)
-            String firstName = StringUtils.defaultString(profile.getUser().getFirstName(), "");
+            String firstName = StringUtils.defaultString(user.getFirstName(), "");
             String messageText = pickRandom(messagePool)
                     .replace(NAME_PLACEHOLDER, firstName)
                     .trim();
@@ -130,9 +134,13 @@ public class NotificationSchedulerService {
             try {
                 sendNotificationMessage(telegramId, messageText);
                 successCount++;
+                markReachable(user, true);
             } catch (TelegramApiException e) {
                 log.warn("Не удалось отправить уведомление пользователю telegramId={}: {}", telegramId, e.getMessage());
                 errorCount++;
+                if (isPermanentDeliveryFailure(e.getMessage())) {
+                    markReachable(user, false);
+                }
             } catch (Exception e) {
                 log.error("Неожиданная ошибка при отправке уведомления telegramId={}: {}", telegramId, e.getMessage(), e);
                 errorCount++;
@@ -145,6 +153,22 @@ public class NotificationSchedulerService {
     /** Выбирает случайный элемент из пула сообщений */
     private String pickRandom(List<String> pool) {
         return pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+    }
+
+    /**
+     * Обновляет {@code User.notificationsAllowed} по факту реальной доставки —
+     * см. миграцию V59 и аналогичный метод в {@code BroadcastService}.
+     */
+    private void markReachable(User user, boolean reachable) {
+        if (user.isNotificationsAllowed() == reachable) return;
+        user.setNotificationsAllowed(reachable);
+        userRepository.save(user);
+    }
+
+    /** "chat not found" / "bot was blocked" — постоянные ошибки, остальное может быть временным сбоем. */
+    private boolean isPermanentDeliveryFailure(String errorMessage) {
+        if (errorMessage == null) return false;
+        return errorMessage.contains("chat not found") || errorMessage.contains("bot was blocked");
     }
 
     private void sendNotificationMessage(Long chatId, String text) throws TelegramApiException {

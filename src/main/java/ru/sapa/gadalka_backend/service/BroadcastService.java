@@ -240,11 +240,37 @@ public class BroadcastService {
             } else {
                 telegramBot.sendBroadcastMessage(user.getTelegramId(), personalizedMessage, gift);
             }
+            markReachable(user, true);
             return true;
         } catch (Exception e) {
             log.warn("Ошибка рассылки: userId={}, telegramId={}, error={}", user.getId(), user.getTelegramId(), e.getMessage());
+            if (isPermanentDeliveryFailure(e.getMessage())) {
+                markReachable(user, false);
+            }
             return false;
         }
+    }
+
+    /**
+     * Обновляет {@code User.notificationsAllowed} по факту реальной доставки —
+     * этот флаг используется, чтобы не дёргать Telegram API впустую по заведомо
+     * недостижимым пользователям (см. миграцию V59).
+     */
+    private void markReachable(User user, boolean reachable) {
+        if (user.isNotificationsAllowed() == reachable) return;
+        user.setNotificationsAllowed(reachable);
+        userRepository.save(user);
+    }
+
+    /**
+     * "chat not found" и "bot was blocked by the user" — постоянные ошибки:
+     * пользователь недостижим до тех пор, пока сам не напишет боту заново
+     * или не разрешит уведомления через requestWriteAccess(). Остальные ошибки
+     * (сетевые сбои, лимиты) могут быть временными — флаг не трогаем.
+     */
+    private boolean isPermanentDeliveryFailure(String errorMessage) {
+        if (errorMessage == null) return false;
+        return errorMessage.contains("chat not found") || errorMessage.contains("bot was blocked");
     }
 
     /**

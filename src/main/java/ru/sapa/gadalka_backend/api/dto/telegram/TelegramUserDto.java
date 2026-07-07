@@ -28,4 +28,6 @@ public class TelegramUserDto {
 
     @JsonProperty("is_premium")
     private boolean premium;
+
+    private boolean notificationsAllowed;
 }

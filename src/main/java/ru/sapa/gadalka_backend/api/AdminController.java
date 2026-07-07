@@ -715,11 +715,24 @@ public class AdminController {
      *
      * <p>Счётчики именованных сегментов аудитории — чтобы админка показывала
      * число получателей на кнопке выбора аудитории до запуска рассылки.
+     *
+     * <p>{@code notificationsAllowed} / {@code totalUsers} — сколько пользователей
+     * реально достижимы ботом (см. миграцию V59 и комментарий в {@code User.notificationsAllowed}).
+     * Значительная часть пользователей открывает Mini App по прямой ссылке
+     * ({@code ?startapp=CODE}), минуя {@code /start}, и остаётся недостижимой для рассылок,
+     * пока не разрешит уведомления явно (WebApp.requestWriteAccess) — этот счётчик
+     * показывает прогресс по такой аудитории.
      */
     @GetMapping("/broadcast/segments")
     public ResponseEntity<?> getBroadcastSegments() {
         long inactive = userRepository.countInactiveUsers(OffsetDateTime.now().minusDays(INACTIVE_SEGMENT_MIN_AGE_DAYS));
-        return ResponseEntity.ok(Map.of("inactive", inactive));
+        long notificationsAllowed = userRepository.countByNotificationsAllowedTrue();
+        long totalUsers = userRepository.count();
+        return ResponseEntity.ok(Map.of(
+                "inactive", inactive,
+                "notificationsAllowed", notificationsAllowed,
+                "totalUsers", totalUsers
+        ));
     }
 
     /**

@@ -275,4 +275,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** Счётчик того же сегмента — для отображения числа получателей в админке до отправки */
     @Query("SELECT COUNT(u) FROM User u WHERE u.totalActionsCount = 0 AND u.banned = false AND u.createdAt < :cutoff")
     long countInactiveUsers(@Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * Сколько пользователей реально достижимы ботом (notificationsAllowed = true).
+     * Показывается в админке рядом с сегментами рассылки — см. {@link #countInactiveUsers}.
+     */
+    long countByNotificationsAllowedTrue();
 }

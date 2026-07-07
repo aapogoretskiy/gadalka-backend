@@ -16,6 +16,7 @@ public class UserMapper {
                 .username(user.getUsername())
                 .firstName(user.getFirstName())
                 .lastName(user.getLastName())
+                .notificationsAllowed(user.isNotificationsAllowed())
                 .build();
     }
 }
