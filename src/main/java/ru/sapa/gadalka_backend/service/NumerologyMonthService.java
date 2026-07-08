@@ -17,6 +17,7 @@ import ru.sapa.gadalka_backend.domain.NumerologyMonthReading;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.repository.NumerologyMonthReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
@@ -46,6 +47,7 @@ public class NumerologyMonthService {
     private final NumerologyService numerologyService;
     private final NumerologyContentService contentService;
     private final NumerologyMonthReadingRepository repository;
+    private final NumerologyYearReadingRepository yearReadingRepository;
     private final NumerologyWeekService numerologyWeekService;
     private final UserProfileRepository userProfileRepository;
     private final UserRepository userRepository;
@@ -60,19 +62,38 @@ public class NumerologyMonthService {
 
         return repository.findByUserIdAndMonthStartDate(userId, monthStart)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, monthStart, true));
+                .orElseGet(() -> createAndSave(userId, monthStart, !ownsYearCovering(userId, monthStart)));
     }
 
     /**
-     * Тихая проверка наличия уже оплаченного разбора на текущий месяц — НЕ создаёт новый
-     * разбор и НЕ списывает знаки. Используется фронтом при открытии экрана.
+     * Тихая проверка наличия уже оплаченного разбора на текущий месяц — НЕ списывает знаки.
+     * Используется фронтом при открытии экрана.
+     * <p>
+     * Если разбора ещё нет, но пользователь владеет годовым разбором, покрывающим сегодняшний
+     * день, — молча материализуем текущий месяц БЕСПЛАТНО (тем же путём, каким это происходит
+     * при клике по месяцу с экрана года, см. {@link #createIncludedMonth}) вместо того, чтобы
+     * отдавать 404 и показывать пейволл: год уже оплачен, месяц входит в его стоимость,
+     * пользователю не нужно платить второй раз и не нужно заходить именно через экран года.
      */
     @Transactional
     public Optional<NumerologyMonthResponse> peekMonth(Long userId) {
         LocalDate monthStart = LocalDate.now().withDayOfMonth(1);
 
-        return repository.findByUserIdAndMonthStartDate(userId, monthStart)
+        Optional<NumerologyMonthResponse> existing = repository.findByUserIdAndMonthStartDate(userId, monthStart)
                 .map(this::toResponse);
+        if (existing.isPresent()) {
+            return existing;
+        }
+        if (ownsYearCovering(userId, monthStart)) {
+            return Optional.of(createAndSave(userId, monthStart, false));
+        }
+        return Optional.empty();
+    }
+
+    /** Владеет ли пользователь годовым разбором, покрывающим переданную дату. */
+    private boolean ownsYearCovering(Long userId, LocalDate date) {
+        LocalDate yearStart = LocalDate.of(date.getYear(), 1, 1);
+        return yearReadingRepository.findByUserIdAndYearStartDate(userId, yearStart).isPresent();
     }
 
     /**

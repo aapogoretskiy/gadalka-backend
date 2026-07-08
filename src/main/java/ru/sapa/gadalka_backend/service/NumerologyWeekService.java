@@ -15,6 +15,7 @@ import ru.sapa.gadalka_backend.domain.NumerologyWeekReading;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
@@ -43,6 +44,7 @@ public class NumerologyWeekService {
     private final NumerologyService numerologyService;
     private final NumerologyContentService contentService;
     private final NumerologyWeekReadingRepository repository;
+    private final NumerologyYearReadingRepository yearReadingRepository;
     private final UserProfileRepository userProfileRepository;
     private final UserRepository userRepository;
     private final DiaryService diaryService;
@@ -56,19 +58,39 @@ public class NumerologyWeekService {
 
         return currentWeekReading(userId, today)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, today, today.plusDays(6), true));
+                .orElseGet(() -> createAndSave(userId, today, today.plusDays(6), !ownsYearCovering(userId, today)));
     }
 
     /**
-     * Тихая проверка наличия уже оплаченного расклада на текущую неделю — НЕ создаёт новый
-     * расклад и НЕ списывает знаки. Используется фронтом при открытии экрана, чтобы понять,
-     * показывать ли сразу готовый результат или пейволл.
+     * Тихая проверка наличия уже оплаченного расклада на текущую неделю — НЕ списывает знаки.
+     * Используется фронтом при открытии экрана, чтобы понять, показывать ли сразу готовый
+     * результат или пейволл.
+     * <p>
+     * Если расклада ещё нет, но пользователь владеет годовым разбором, покрывающим сегодняшний
+     * день, — молча создаём стандартную 7-дневную неделю БЕСПЛАТНО вместо 404/пейволла: год уже
+     * оплачен, неделя входит в его стоимость. Если позже пользователь откроет через экран года
+     * ещё и сам месяц — его календарные недельные блоки будут сосуществовать с этой; какая из
+     * них "актуальна на сегодня" решает {@link #currentWeekReading} (берёт последнюю по дате
+     * начала), это уже штатный сценарий пересечения диапазонов.
      */
     @Transactional
     public Optional<NumerologyWeekResponse> peekWeek(Long userId) {
         LocalDate today = LocalDate.now();
 
-        return currentWeekReading(userId, today).map(this::toResponse);
+        Optional<NumerologyWeekResponse> existing = currentWeekReading(userId, today).map(this::toResponse);
+        if (existing.isPresent()) {
+            return existing;
+        }
+        if (ownsYearCovering(userId, today)) {
+            return Optional.of(createAndSave(userId, today, today.plusDays(6), false));
+        }
+        return Optional.empty();
+    }
+
+    /** Владеет ли пользователь годовым разбором, покрывающим переданную дату. */
+    private boolean ownsYearCovering(Long userId, LocalDate date) {
+        LocalDate yearStart = LocalDate.of(date.getYear(), 1, 1);
+        return yearReadingRepository.findByUserIdAndYearStartDate(userId, yearStart).isPresent();
     }
 
     /**
