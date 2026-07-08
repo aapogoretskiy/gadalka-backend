@@ -44,6 +44,8 @@ import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyMonthReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
@@ -119,6 +121,8 @@ public class AdminController {
     private final CompatibilityReadingRepository compatibilityReadingRepository;
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
+    private final NumerologyMonthReadingRepository numerologyMonthReadingRepository;
+    private final NumerologyYearReadingRepository numerologyYearReadingRepository;
     private final DreamReadingRepository dreamReadingRepository;
     private final DreamSymbolRepository dreamSymbolRepository;
     private final DailyCardRepository dailyCardRepository;
@@ -454,6 +458,58 @@ public class AdminController {
             item.put("label",          "Расклад на неделю");
             item.put("date",           nwr.getCreatedAt().toString());
             item.put("details",        "Число недели: " + nwr.getWeekNumber());
+            item.put("interpretation", null);
+            item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
+            item.put("feedbackComment", fb != null ? fb.getComment() : null);
+            actions.add(item);
+        }
+
+        // ── Расклад на месяц ─────────────────────────────────────────────────
+        List<NumerologyMonthReading> monthReadings = numerologyMonthReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable);
+        List<Long> monthReadingIds = monthReadings
+                .stream()
+                .map(NumerologyMonthReading::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, ActionFeedback> monthFeedbacks = actionFeedbackRepository
+                .findByActionTypeAndActionIdIn(FeedbackTargetType.NUMEROLOGY_MONTH, monthReadingIds)
+                .stream()
+                .collect(Collectors.toMap(ActionFeedback::getActionId, fb -> fb));
+
+        for (NumerologyMonthReading nmr : monthReadings) {
+            ActionFeedback fb = monthFeedbacks.get(nmr.getId());
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             nmr.getId());
+            item.put("type",           "NUMEROLOGY_MONTH");
+            item.put("label",          "Расклад на месяц");
+            item.put("date",           nmr.getCreatedAt().toString());
+            item.put("details",        "Число месяца: " + nmr.getMonthNumber());
+            item.put("interpretation", null);
+            item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
+            item.put("feedbackComment", fb != null ? fb.getComment() : null);
+            actions.add(item);
+        }
+
+        // ── Разбор на год ────────────────────────────────────────────────────
+        List<NumerologyYearReading> yearReadings = numerologyYearReadingRepository.findByUserIdOrderByCreatedAtDesc(id, pageable);
+        List<Long> yearReadingIds = yearReadings
+                .stream()
+                .map(NumerologyYearReading::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, ActionFeedback> yearFeedbacks = actionFeedbackRepository
+                .findByActionTypeAndActionIdIn(FeedbackTargetType.NUMEROLOGY_YEAR, yearReadingIds)
+                .stream()
+                .collect(Collectors.toMap(ActionFeedback::getActionId, fb -> fb));
+
+        for (NumerologyYearReading nyr : yearReadings) {
+            ActionFeedback fb = yearFeedbacks.get(nyr.getId());
+            var item = new java.util.LinkedHashMap<String, Object>();
+            item.put("id",             nyr.getId());
+            item.put("type",           "NUMEROLOGY_YEAR");
+            item.put("label",          "Разбор на год");
+            item.put("date",           nyr.getCreatedAt().toString());
+            item.put("details",        "Число года: " + nyr.getYearNumber());
             item.put("interpretation", null);
             item.put("feedbackRating", fb != null ? fb.getRating().name() : null);
             item.put("feedbackComment", fb != null ? fb.getComment() : null);
