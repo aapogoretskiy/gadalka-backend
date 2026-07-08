@@ -12,5 +12,6 @@ public record FeatureCostsDto(
         int compatibilityUnlock,
         int numerologyWeek,
         int numerologyMonth,
+        int numerologyYear,
         int dream
 ) {}

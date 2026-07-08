@@ -11,6 +11,7 @@ import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COS
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_HORSESHOE;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_NUMEROLOGY_WEEK;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_NUMEROLOGY_MONTH;
+import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_NUMEROLOGY_YEAR;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_THREE_CARD;
 
 /**
@@ -53,6 +54,11 @@ public class FeatureCostService {
         return systemConfigService.getIntValue(FEATURE_COST_NUMEROLOGY_MONTH, 10);
     }
 
+    /** Стоимость годового нумерологического разбора (12 месяцев доступны бесплатно по клику). */
+    public int getNumerologyYearCost() {
+        return systemConfigService.getIntValue(FEATURE_COST_NUMEROLOGY_YEAR, 18);
+    }
+
     /** Стоимость разбора сна (Сонник). */
     public int getDreamCost() {
         return systemConfigService.getIntValue(FEATURE_COST_DREAM, 3);
@@ -67,6 +73,7 @@ public class FeatureCostService {
                 getCompatibilityUnlockCost(),
                 getNumerologyWeekCost(),
                 getNumerologyMonthCost(),
+                getNumerologyYearCost(),
                 getDreamCost()
         );
     }
@@ -79,7 +86,7 @@ public class FeatureCostService {
     public void updateCosts(FeatureCostsDto costs) {
         if (costs.threeCard() <= 0 || costs.horseshoe() <= 0 || costs.celticCross() <= 0
                 || costs.compatibilityUnlock() <= 0 || costs.numerologyWeek() <= 0
-                || costs.numerologyMonth() <= 0 || costs.dream() <= 0) {
+                || costs.numerologyMonth() <= 0 || costs.numerologyYear() <= 0 || costs.dream() <= 0) {
             throw new IllegalArgumentException("Стоимость функции должна быть положительным числом");
         }
         systemConfigService.setValue(FEATURE_COST_THREE_CARD, String.valueOf(costs.threeCard()));
@@ -88,6 +95,7 @@ public class FeatureCostService {
         systemConfigService.setValue(FEATURE_COST_COMPATIBILITY_UNLOCK, String.valueOf(costs.compatibilityUnlock()));
         systemConfigService.setValue(FEATURE_COST_NUMEROLOGY_WEEK, String.valueOf(costs.numerologyWeek()));
         systemConfigService.setValue(FEATURE_COST_NUMEROLOGY_MONTH, String.valueOf(costs.numerologyMonth()));
+        systemConfigService.setValue(FEATURE_COST_NUMEROLOGY_YEAR, String.valueOf(costs.numerologyYear()));
         systemConfigService.setValue(FEATURE_COST_DREAM, String.valueOf(costs.dream()));
     }
 }

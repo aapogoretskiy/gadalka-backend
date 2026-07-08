@@ -34,6 +34,7 @@ public record RangeReportDto(
             long celticCross,
             long numerologyWeek,
             long numerologyMonth,
+            long numerologyYear,
             long dream
     ) {}
 

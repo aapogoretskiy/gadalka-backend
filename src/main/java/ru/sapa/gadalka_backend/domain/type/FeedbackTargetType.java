@@ -10,5 +10,6 @@ public enum FeedbackTargetType {
     COMPATIBILITY,
     NUMEROLOGY_WEEK,
     NUMEROLOGY_MONTH,
+    NUMEROLOGY_YEAR,
     DREAM
 }

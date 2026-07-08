@@ -189,6 +189,58 @@ public class NumerologyContentService {
                 .replace("{monthPrep}", MONTHS_PREPOSITIONAL[calendarMonth - 1]);
     }
 
+    // ── Контент годового разбора (по числу года) ─────────────────────────────────
+    // В отличие от месяца, год не требует падежных форм — просто подставляем
+    // календарный год числом ({Year} → "2026").
+
+    public String yearTitle(int yearNumber) {
+        return textOrNull(numberNode(yearNumber), "yearTitle");
+    }
+
+    public String yearMainTheme(int yearNumber, int calendarYear) {
+        return applyYearPlaceholders(textOrNull(numberNode(yearNumber), "yearMainTheme"), calendarYear);
+    }
+
+    public String yearWhatToAvoid(int yearNumber, int calendarYear) {
+        return applyYearPlaceholders(textOrNull(numberNode(yearNumber), "yearWhatToAvoid"), calendarYear);
+    }
+
+    public String yearAdvice(int yearNumber, int calendarYear) {
+        return applyYearPlaceholders(textOrNull(numberNode(yearNumber), "yearAdvice"), calendarYear);
+    }
+
+    public NumerologyMonthLifeAreasDto yearLifeAreas(int yearNumber, int calendarYear) {
+        JsonNode areas = numberNode(yearNumber).get("yearLifeAreas");
+        return new NumerologyMonthLifeAreasDto(
+                yearLifeArea(areas, "relationships", calendarYear),
+                yearLifeArea(areas, "career", calendarYear),
+                yearLifeArea(areas, "finance", calendarYear),
+                yearLifeArea(areas, "health", calendarYear)
+        );
+    }
+
+    private NumerologyMonthLifeAreaDto yearLifeArea(JsonNode areas, String key, int calendarYear) {
+        JsonNode node = areas.get(key);
+        return new NumerologyMonthLifeAreaDto(
+                node.get("score").asInt(),
+                applyYearPlaceholders(node.get("text").asText(), calendarYear)
+        );
+    }
+
+    /**
+     * Короткий совет под один из 4 ключевых периодов года (Старт/Пауза/Пик/Итоги) — по числу
+     * МЕСЯЦА, который выиграл этот период (не по числу года!), см. NumerologyYearService.
+     */
+    public String yearPeriodAdvice(int monthNumber, String periodKey) {
+        JsonNode node = numberNode(monthNumber).get("yearPeriodAdvice");
+        return node != null ? textOrNull(node, periodKey) : null;
+    }
+
+    private String applyYearPlaceholders(String text, int calendarYear) {
+        if (text == null) return null;
+        return text.replace("{Year}", String.valueOf(calendarYear));
+    }
+
     private String textOrNull(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value != null ? value.asText() : null;

@@ -22,6 +22,7 @@ import ru.sapa.gadalka_backend.repository.FortuneRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyDayReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyMonthReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
+import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.repository.UserVisitRepository;
@@ -51,6 +52,7 @@ public class ReportService {
     private final NumerologyDayReadingRepository numerologyDayReadingRepository;
     private final NumerologyWeekReadingRepository numerologyWeekReadingRepository;
     private final NumerologyMonthReadingRepository numerologyMonthReadingRepository;
+    private final NumerologyYearReadingRepository numerologyYearReadingRepository;
     private final DreamReadingRepository dreamReadingRepository;
     private final DailyCardRepository dailyCardRepository;
     private final UserVisitRepository userVisitRepository;
@@ -149,10 +151,11 @@ public class ReportService {
         long dailyCard   = dailyCardRepository.countByDateGreaterThanEqualWithSource(today, source);
         long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
         long numerologyMonth = numerologyMonthReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
+        long numerologyYear = numerologyYearReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
         long dream       = dreamReadingRepository.countByCreatedAtAfterWithSource(minus1d, source);
-        long total       = threeCard + horseshoe + celticCross + compatibility + numerology + dailyCard + numerologyWeek + numerologyMonth + dream;
+        long total       = threeCard + horseshoe + celticCross + compatibility + numerology + dailyCard + numerologyWeek + numerologyMonth + numerologyYear + dream;
 
-        return new ActionsTodayDto(total, threeCard, horseshoe, celticCross, compatibility, numerology, dailyCard, numerologyWeek, numerologyMonth, dream);
+        return new ActionsTodayDto(total, threeCard, horseshoe, celticCross, compatibility, numerology, dailyCard, numerologyWeek, numerologyMonth, numerologyYear, dream);
     }
 
     // ── Повторные посещения ───────────────────────────────────────────────────
@@ -188,9 +191,10 @@ public class ReportService {
         long compatibility = compatibilityReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
         long numerologyWeek = numerologyWeekReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
         long numerologyMonth = numerologyMonthReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
+        long numerologyYear = numerologyYearReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
         long dream = dreamReadingRepository.countByCreatedAtBetweenWithSource(from, to, source);
 
-        long actionsTotal = fortunesTotal + compatibility + numerologyWeek + numerologyMonth + dream;
+        long actionsTotal = fortunesTotal + compatibility + numerologyWeek + numerologyMonth + numerologyYear + dream;
 
         long returningUsers = userVisitRepository.countUsersWithMultipleVisitsBetweenWithSource(from, to, source);
 
@@ -205,7 +209,7 @@ public class ReportService {
                 newUsers,
                 new RangeReportDto.FortunesRangeDto(fortunesTotal, threeCard, horseshoe, celticCross),
                 compatibility,
-                new RangeReportDto.ActionsRangeDto(actionsTotal, compatibility, threeCard, horseshoe, celticCross, numerologyWeek, numerologyMonth, dream),
+                new RangeReportDto.ActionsRangeDto(actionsTotal, compatibility, threeCard, horseshoe, celticCross, numerologyWeek, numerologyMonth, numerologyYear, dream),
                 returningUsers,
                 new RangeReportDto.PaymentsRangeDto(rubKopecks, rubTransactions, stars, starsTransactions)
         );

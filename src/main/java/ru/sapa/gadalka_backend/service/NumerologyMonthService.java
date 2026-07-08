@@ -60,7 +60,7 @@ public class NumerologyMonthService {
 
         return repository.findByUserIdAndMonthStartDate(userId, monthStart)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, monthStart));
+                .orElseGet(() -> createAndSave(userId, monthStart, true));
     }
 
     /**
@@ -75,7 +75,34 @@ public class NumerologyMonthService {
                 .map(this::toResponse);
     }
 
-    private NumerologyMonthResponse createAndSave(Long userId, LocalDate monthStart) {
+    /**
+     * Тихая проверка расклада на КОНКРЕТНЫЙ месяц (произвольный, не обязательно текущий) —
+     * используется, когда пользователь открывает один из 12 месяцев внутри уже купленного
+     * годового разбора (см. NumerologyYearService). НЕ создаёт разбор и НЕ списывает знаки —
+     * просто отдаёт уже существующий (созданный бесплатно при клике через
+     * {@link #createIncludedMonth}) или пусто, если такого ещё нет.
+     */
+    @Transactional
+    public Optional<NumerologyMonthResponse> peekByDate(Long userId, LocalDate monthStart) {
+        return repository.findByUserIdAndMonthStartDate(userId, monthStart)
+                .map(this::toResponse);
+    }
+
+    /**
+     * Создаёт (если ещё не существует) разбор на произвольный календарный месяц БЕЗ списания
+     * знаков — используется, когда пользователь кликает на один из 12 месяцев годового разбора:
+     * полный разбор месяца входит в стоимость года и открывается бесплатно, лениво, по клику
+     * (см. NumerologyYearService). Как и обычный месяц, попутно бесплатно создаёт свои 4-5
+     * недельных блоков через {@link NumerologyWeekService#createIncludedWeek}.
+     */
+    @Transactional
+    public NumerologyMonthResponse createIncludedMonth(Long userId, LocalDate monthStart) {
+        return repository.findByUserIdAndMonthStartDate(userId, monthStart)
+                .map(this::toResponse)
+                .orElseGet(() -> createAndSave(userId, monthStart, false));
+    }
+
+    private NumerologyMonthResponse createAndSave(Long userId, LocalDate monthStart, boolean chargeCredits) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -126,7 +153,9 @@ public class NumerologyMonthService {
         List<NumerologyMonthKeyDateDto> keyDates = buildKeyDates(allDays, blocks);
 
         int monthCost = featureCostService.getNumerologyMonthCost();
-        fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_MONTH, monthCost);
+        if (chargeCredits) {
+            fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_MONTH, monthCost);
+        }
 
         // Недели внутри месяца включены в его стоимость — создаём (или переиспользуем уже
         // существующие) 4-5 недельных раскладов БЕСПЛАТНО, знаки за них не списываются.
@@ -174,8 +203,13 @@ public class NumerologyMonthService {
 
         diaryService.save(userId, DiaryFeatureType.NUMEROLOGY_MONTH, reading.getId(), response);
 
-        log.info("Месячный нумерологический разбор создан и оплачен: userId={}, monthStart={}, monthEnd={}, списано={} знаков",
-                userId, monthStart, monthEnd, monthCost);
+        if (chargeCredits) {
+            log.info("Месячный нумерологический разбор создан и оплачен: userId={}, monthStart={}, monthEnd={}, списано={} знаков",
+                    userId, monthStart, monthEnd, monthCost);
+        } else {
+            log.info("Месячный нумерологический разбор создан бесплатно (включён в годовой разбор): userId={}, monthStart={}, monthEnd={}",
+                    userId, monthStart, monthEnd);
+        }
 
         return toResponse(reading);
     }

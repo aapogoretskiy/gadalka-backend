@@ -13,10 +13,12 @@ import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyDayResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyMonthResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyPortraitResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
+import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyYearResponse;
 import ru.sapa.gadalka_backend.service.NumerologyDayService;
 import ru.sapa.gadalka_backend.service.NumerologyMonthService;
 import ru.sapa.gadalka_backend.service.NumerologyPortraitService;
 import ru.sapa.gadalka_backend.service.NumerologyWeekService;
+import ru.sapa.gadalka_backend.service.NumerologyYearService;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -30,6 +32,7 @@ public class NumerologyController extends BaseController {
     private final NumerologyDayService numerologyDayService;
     private final NumerologyWeekService numerologyWeekService;
     private final NumerologyMonthService numerologyMonthService;
+    private final NumerologyYearService numerologyYearService;
     private final NumerologyPortraitService numerologyPortraitService;
     private final UserProfileService userProfileService;
 
@@ -132,5 +135,47 @@ public class NumerologyController extends BaseController {
     public NumerologyMonthResponse getCurrentMonth(HttpServletRequest request) {
         return numerologyMonthService.peekMonth(resolveUser(request).getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Действующего разбора на месяц нет"));
+    }
+
+    @GetMapping("/month/by-date")
+    @Operation(
+            summary = "Открыть месяц внутри уже купленного годового разбора",
+            description = """
+                    Возвращает полный разбор конкретного календарного месяца (параметр date — любое
+                    число этого месяца, формат YYYY-MM-DD). Если разбор ещё не создан — создаёт его
+                    бесплатно (включён в стоимость года) и заодно бесплатно создаёт его 4-5 недельных
+                    блоков. Требует, чтобы у пользователя был куплен годовой разбор на год, к которому
+                    относится месяц — иначе 402. Используется при переходе на месяц с экрана года.
+                    """)
+    public NumerologyMonthResponse getMonthByDate(HttpServletRequest request, @RequestParam String date) {
+        LocalDate monthStart = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE).withDayOfMonth(1);
+        return numerologyYearService.openIncludedMonth(resolveUser(request).getId(), monthStart);
+    }
+
+    @GetMapping("/year")
+    @Operation(
+            summary = "Годовой нумерологический разбор",
+            description = """
+                    Платный разбор на текущий календарный год. Если у пользователя уже есть оплаченный
+                    разбор на этот год, повторное списание не происходит — отдаётся тот же разбор.
+                    Экран года показывает 12 лёгких превью месяцев (считаются на лету, без создания
+                    записей) и 4 ключевых периода (Старт/Пауза/Пик/Итоги) — полный разбор конкретного
+                    месяца создаётся отдельно и бесплатно через /month/by-date по клику.
+                    Требует указанной даты рождения в профиле (422) и достаточного баланса знаков (402).
+                    """)
+    public NumerologyYearResponse getYear(HttpServletRequest request) {
+        return numerologyYearService.getYear(resolveUser(request).getId());
+    }
+
+    @GetMapping("/year/current")
+    @Operation(
+            summary = "Тихая проверка действующего разбора на год",
+            description = """
+                    В отличие от /year — НЕ создаёт новый разбор и НЕ списывает знаки.
+                    Возвращает уже оплаченный разбор на текущий год, если он есть, иначе 404.
+                    """)
+    public NumerologyYearResponse getCurrentYear(HttpServletRequest request) {
+        return numerologyYearService.peekYear(resolveUser(request).getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Действующего разбора на год нет"));
     }
 }
