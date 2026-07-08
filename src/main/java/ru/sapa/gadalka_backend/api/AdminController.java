@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.AdminDreamSymbolDto;
+import ru.sapa.gadalka_backend.api.dto.admin.FeatureBadgesDto;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.InboxMessageStatsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.SensitiveQueryLogDto;
@@ -51,6 +52,7 @@ import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.AdminPaymentService;
 import ru.sapa.gadalka_backend.service.BroadcastService;
+import ru.sapa.gadalka_backend.service.FeatureBadgeService;
 import ru.sapa.gadalka_backend.service.FeatureCostService;
 import ru.sapa.gadalka_backend.service.InboxService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
@@ -136,6 +138,7 @@ public class AdminController {
     private final ReferralStatsService referralStatsService;
     private final SupportTicketService supportTicketService;
     private final FeatureCostService featureCostService;
+    private final FeatureBadgeService featureBadgeService;
     private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
     private final AdminPaymentService adminPaymentService;
 
@@ -983,6 +986,37 @@ public class AdminController {
         }
 
         return ResponseEntity.ok(featureCostService.getAllCosts());
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  ОТМЕТКИ «НОВИНКА» / «ХИТ» НА ПЛАТНЫХ ФУНКЦИЯХ
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * GET /api/admin/feature-badges
+     *
+     * <p>Текущие отметки «Новинка»/«Хит» по всем платным функциям (читаются из system_config).
+     */
+    @GetMapping("/feature-badges")
+    public ResponseEntity<FeatureBadgesDto> getFeatureBadges(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил текущие отметки «Новинка»/«Хит»", adminId);
+        return ResponseEntity.ok(featureBadgeService.getAllBadges());
+    }
+
+    /**
+     * PUT /api/admin/feature-badges
+     *
+     * <p>Обновляет отметки «Новинка»/«Хит» сразу по всем функциям. Изменения вступают
+     * в силу немедленно (без деплоя) — жёлтая точка в навигации и рамка на карточке
+     * появятся/исчезнут при следующей загрузке экрана.
+     */
+    @PutMapping("/feature-badges")
+    public ResponseEntity<?> updateFeatureBadges(@RequestBody FeatureBadgesDto body, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} обновляет отметки «Новинка»/«Хит»: {}", adminId, body);
+        featureBadgeService.updateBadges(body);
+        return ResponseEntity.ok(featureBadgeService.getAllBadges());
     }
 
     // ══════════════════════════════════════════════════════════

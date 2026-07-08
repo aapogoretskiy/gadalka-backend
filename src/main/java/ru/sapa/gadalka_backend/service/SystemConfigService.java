@@ -38,6 +38,37 @@ public class SystemConfigService {
     }
 
     /**
+     * Читает значение как булево. Понимает "true"/"false" (без учёта регистра).
+     * Если ключ не найден или значение не распознано — возвращает defaultValue.
+     */
+    public boolean getBooleanValue(String key, boolean defaultValue) {
+        String raw = getValue(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        if ("true".equalsIgnoreCase(raw.trim())) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(raw.trim())) {
+            return false;
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Время последнего изменения значения по ключу. Используется, например,
+     * чтобы понять, когда именно фича была помечена «Новинка» — это позволяет
+     * фронтенду показывать точку-уведомление заново, если админ переставил
+     * отметку на другую фичу уже после того, как пользователь предыдущую видел.
+     * Возвращает null, если ключа нет.
+     */
+    public LocalDateTime getUpdatedAt(String key) {
+        return repository.findByKey(key)
+                .map(SystemConfig::getUpdatedAt)
+                .orElse(null);
+    }
+
+    /**
      * Записывает значение по ключу (upsert): обновляет существующую запись
      * или создаёт новую, если ключа ещё нет в system_config.
      */
