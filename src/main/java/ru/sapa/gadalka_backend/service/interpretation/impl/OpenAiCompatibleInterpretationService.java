@@ -140,6 +140,15 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
      */
     private static final int TRUNCATION_MAX_ATTEMPTS = 2;
 
+    /**
+     * Во сколько раз увеличивать maxTokens на каждой повторной попытке после обрезания
+     * по "length". Без эскалации повтор с тем же лимитом бессмысленен для вопросов,
+     * которые стабильно требуют от reasoning-моделей (deepseek-v4-flash через aitunnel)
+     * больше скрытых токенов на "размышление" перед видимым ответом — см. историю
+     * с "Что между нами с Никитой?", обрезавшимся 3 раза подряд при фиксированном лимите.
+     */
+    private static final int TRUNCATION_ESCALATION_FACTOR = 4;
+
     /** Текст-заглушка для отдельного поля гороскопа, если AI не заполнил именно его. */
     private static final String FIELD_FALLBACK_TEXT = "Звёзды сегодня немногословны на эту тему.";
 
@@ -681,14 +690,16 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
      */
     private String callAi(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens) {
         String content = StringUtils.EMPTY;
+        int currentMaxTokens = maxTokens;
         for (int attempt = 1; attempt <= TRUNCATION_MAX_ATTEMPTS; attempt++) {
-            AiCallResult result = callAiRaw(userPrompt, systemPrompt, sensitivityRules, maxTokens);
+            AiCallResult result = callAiRaw(userPrompt, systemPrompt, sensitivityRules, currentMaxTokens);
             content = result.content();
             if (!"length".equals(result.finishReason())) {
                 return content;
             }
-            log.warn("Ответ {} AI обрезан по лимиту токенов (попытка {}/{}, maxTokens={}) — переспрашиваем",
-                    getProvider(), attempt, TRUNCATION_MAX_ATTEMPTS, maxTokens);
+            log.warn("Ответ {} AI обрезан по лимиту токенов (попытка {}/{}, maxTokens={}) — переспрашиваем с увеличенным лимитом",
+                    getProvider(), attempt, TRUNCATION_MAX_ATTEMPTS, currentMaxTokens);
+            currentMaxTokens *= TRUNCATION_ESCALATION_FACTOR;
         }
         return content;
     }
