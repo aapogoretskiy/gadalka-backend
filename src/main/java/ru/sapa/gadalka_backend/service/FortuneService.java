@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
@@ -13,6 +14,7 @@ import ru.sapa.gadalka_backend.domain.Card;
 import ru.sapa.gadalka_backend.domain.CardDeckTheme;
 import ru.sapa.gadalka_backend.domain.Fortune;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
@@ -31,6 +33,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER;
 
@@ -52,6 +56,8 @@ public class FortuneService {
     private final ThemeService themeService;
     private final CardMapper cardMapper;
     private final SensitiveContentFilterService sensitiveContentFilterService;
+    @Qualifier("aiTaskExecutor")
+    private final Executor aiTaskExecutor;
 
     @Transactional
     public FortuneResponse getFortune(User user, String question, String category, SpreadType spreadType) {
@@ -85,16 +91,36 @@ public class FortuneService {
 
         String currentAiProvider = systemConfigService.getValue(AI_PROVIDER);
         log.debug("Запрашиваем интерпретацию у AI-провайдера '{}' для userId={}", currentAiProvider, user.getId());
-        InterpretationResult result = interpretationManager.interpret(currentAiProvider, cardDtoList, question, category);
 
-        // Если LLM всё-таки отказал (keyword-фильтр промахнулся) — не списываем знаки, логируем
+        // Классификация вопроса (pre-check) и генерация интерпретации запускаются параллельно.
+        // Классификация — маленький вызов (~20 токенов на выходе), почти всегда завершается
+        // раньше большой генерации интерпретации, поэтому в штатном случае (без ретраев
+        // внутри pre-check) это не добавляет пользователю ни секунды ожидания сверх генерации.
+        // Если pre-check заблокирует вопрос — результат генерации (даже если уже готов)
+        // просто не используется и не сохраняется, знаки не списываются.
+        CompletableFuture<SensitiveContentFilterService.PreCheckResult> preCheckFuture =
+                CompletableFuture.supplyAsync(
+                        () -> sensitiveContentFilterService.classifyByLlmPreCheck(question), aiTaskExecutor);
+        CompletableFuture<InterpretationResult> interpretationFuture =
+                CompletableFuture.supplyAsync(
+                        () -> interpretationManager.interpret(currentAiProvider, cardDtoList, question, category), aiTaskExecutor);
+
+        SensitiveContentFilterService.PreCheckResult preCheckResult = preCheckFuture.join();
+        if (preCheckResult.isBlocked()) {
+            sensitiveContentFilterService.logLlmDetection(user.getId(), question,
+                    preCheckResult.category(), DetectionSource.LLM_PRECHECK, preCheckResult.rawOutput());
+            log.info("LLM pre-check заблокировал вопрос: userId={}, category={}", user.getId(), preCheckResult.category());
+            throw new SensitiveContentBlockedException(preCheckResult.category());
+        }
+
+        InterpretationResult result = unwrapJoin(interpretationFuture);
+
+        // Финальная страховка: если keyword и pre-check всё-таки пропустили вопрос,
+        // а сама генерация интерпретации отказала — тоже не списываем знаки, логируем
         if (sensitiveContentFilterService.isLlmRefusal(result.getGeneralInterpretation())) {
             SensitiveContentCategory sensitiveCategory = sensitiveContentFilterService.classifyByLlm(question);
-            try {
-                sensitiveContentFilterService.logSensitiveQuery(user.getId(), question, sensitiveCategory);
-            } catch (Exception logEx) {
-                log.error("Не удалось залогировать чувствительный запрос (LLM refusal): {}", logEx.getMessage());
-            }
+            sensitiveContentFilterService.logLlmDetection(user.getId(), question,
+                    sensitiveCategory, DetectionSource.LLM_REFUSAL_FALLBACK, null);
             log.info("LLM отказал на чувствительный вопрос: userId={}, category={}", user.getId(), sensitiveCategory);
             throw new SensitiveContentBlockedException(sensitiveCategory);
         }
@@ -177,6 +203,23 @@ public class FortuneService {
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 недоступен", e);
+        }
+    }
+
+    /**
+     * {@code CompletableFuture.join()} оборачивает исключения из supplier'а в
+     * {@link java.util.concurrent.CompletionException}, теряя исходный тип — а он важен:
+     * например, ошибки HTTP-вызова к AI прокидываются из {@code callAiRaw} как есть
+     * и должны доходить до {@code GlobalExceptionHandler} в исходном виде, не обёрнутыми.
+     */
+    private <T> T unwrapJoin(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (java.util.concurrent.CompletionException ce) {
+            if (ce.getCause() instanceof RuntimeException re) {
+                throw re;
+            }
+            throw ce;
         }
     }
 

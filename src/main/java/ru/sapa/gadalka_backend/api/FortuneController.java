@@ -18,7 +18,7 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneRequest;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
 import ru.sapa.gadalka_backend.domain.User;
-import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
+import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.service.AiRateLimitService;
 import ru.sapa.gadalka_backend.service.CompatibilityService;
@@ -79,14 +79,16 @@ public class FortuneController extends BaseController {
         profanityFilterService.validate(fortuneRequest.getQuestion());
         promptInjectionFilterService.validate(fortuneRequest.getQuestion(), user.getId());
 
-        Optional<SensitiveContentCategory> sensitiveCategory = sensitiveContentFilterService.detectByKeywords(fortuneRequest.getQuestion());
-        if (sensitiveCategory.isPresent()) {
+        Optional<SensitiveContentFilterService.KeywordMatch> keywordMatch =
+                sensitiveContentFilterService.detectByKeywordsWithMatch(fortuneRequest.getQuestion());
+        if (keywordMatch.isPresent()) {
             try {
-                sensitiveContentFilterService.logSensitiveQuery(user.getId(), fortuneRequest.getQuestion(), sensitiveCategory.get());
+                sensitiveContentFilterService.logKeywordMatch(user.getId(), fortuneRequest.getQuestion(),
+                        keywordMatch.get(), DetectionSource.KEYWORD);
             } catch (Exception logEx) {
                 log.error("Не удалось залогировать чувствительный запрос (keyword): {}", logEx.getMessage());
             }
-            throw new SensitiveContentBlockedException(sensitiveCategory.get());
+            throw new SensitiveContentBlockedException(keywordMatch.get().category());
         }
 
         aiRateLimitService.checkLimit(user.getId());

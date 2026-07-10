@@ -18,7 +18,7 @@ import ru.sapa.gadalka_backend.api.dto.dream.DreamRequest;
 import ru.sapa.gadalka_backend.api.dto.dream.DreamResponse;
 import ru.sapa.gadalka_backend.api.dto.dream.DreamSymbolDto;
 import ru.sapa.gadalka_backend.domain.User;
-import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
+import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.service.AiRateLimitService;
 import ru.sapa.gadalka_backend.service.DreamService;
@@ -68,14 +68,14 @@ public class DreamController extends BaseController {
             profanityFilterService.validate(dreamRequest.getDreamText());
             promptInjectionFilterService.validate(dreamRequest.getDreamText(), user.getId());
 
-            Optional<SensitiveContentCategory> sensitiveCategory = sensitiveContentFilterService.detectByKeywordsForDream(dreamRequest.getDreamText());
-            if (sensitiveCategory.isPresent()) {
+            Optional<SensitiveContentFilterService.KeywordMatch> keywordMatch = sensitiveContentFilterService.detectByKeywordsForDreamWithMatch(dreamRequest.getDreamText());
+            if (keywordMatch.isPresent()) {
                 try {
-                    sensitiveContentFilterService.logSensitiveQuery(user.getId(), dreamRequest.getDreamText(), sensitiveCategory.get());
+                    sensitiveContentFilterService.logKeywordMatch(user.getId(), dreamRequest.getDreamText(), keywordMatch.get(), DetectionSource.KEYWORD);
                 } catch (Exception logEx) {
                     log.error("Не удалось залогировать чувствительный сон (keyword): {}", logEx.getMessage());
                 }
-                throw new SensitiveContentBlockedException(sensitiveCategory.get());
+                throw new SensitiveContentBlockedException(keywordMatch.get().category());
             }
         }
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import ru.sapa.gadalka_backend.domain.DreamReading;
 import ru.sapa.gadalka_backend.domain.DreamSymbol;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.UserProfile;
+import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
@@ -33,6 +35,9 @@ import ru.sapa.gadalka_backend.service.interpretation.DreamGenerationException;
 import ru.sapa.gadalka_backend.service.interpretation.DreamRefusedException;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER;
 
@@ -70,6 +75,8 @@ public class DreamService {
     private final FeatureCostService featureCostService;
     private final DiaryService diaryService;
     private final ObjectMapper objectMapper;
+    @Qualifier("aiTaskExecutor")
+    private final Executor aiTaskExecutor;
 
     /** Активные символы-чипы для экрана ввода. */
     @Transactional(readOnly = true)
@@ -114,19 +121,37 @@ public class DreamService {
                 .toList();
 
         String provider = systemConfigService.getValue(AI_PROVIDER);
+
+        // Пре-чек нужен только для свободного текста — чипы-символы выбираются из нашего
+        // же справочника, чувствительный вопрос там появиться не может по построению.
+        // Запускаем параллельно с генерацией разбора (тот же принцип, что в FortuneService):
+        // классификация — маленький вызов, почти всегда успевает раньше большой генерации.
+        CompletableFuture<SensitiveContentFilterService.PreCheckResult> preCheckFuture = dreamText != null
+                ? CompletableFuture.supplyAsync(
+                        () -> sensitiveContentFilterService.classifyByLlmPreCheckForDream(dreamText), aiTaskExecutor)
+                : CompletableFuture.completedFuture(
+                        new SensitiveContentFilterService.PreCheckResult(SensitiveContentCategory.NOT_SENSITIVE, null));
+        CompletableFuture<DreamContent> interpretationFuture = CompletableFuture.supplyAsync(
+                () -> interpretationManager.interpretDream(provider, dreamText, symbolInputs, zodiacSign, lifeNumber), aiTaskExecutor);
+
+        SensitiveContentFilterService.PreCheckResult preCheckResult = preCheckFuture.join();
+        if (preCheckResult.isBlocked()) {
+            sensitiveContentFilterService.logLlmDetection(user.getId(),
+                    dreamText != null ? dreamText : "[только символы]",
+                    preCheckResult.category(), DetectionSource.LLM_PRECHECK, preCheckResult.rawOutput());
+            log.info("LLM pre-check заблокировал сон: userId={}, category={}", user.getId(), preCheckResult.category());
+            throw new SensitiveContentBlockedException(preCheckResult.category());
+        }
+
         DreamContent content;
         try {
-            content = interpretationManager.interpretDream(provider, dreamText, symbolInputs, zodiacSign, lifeNumber);
+            content = unwrapJoin(interpretationFuture);
         } catch (DreamRefusedException refused) {
-            // AI отказался (политика/СВО и т.п.) — знаки не списаны, логируем для админки
+            // Финальная страховка: keyword и pre-check пропустили, а сама генерация всё же отказала
             SensitiveContentCategory category = sensitiveContentFilterService.classifyByLlm(
                     dreamText != null ? dreamText : String.join(", ", symbolInputs.stream().map(DreamContent.SymbolMeaning::name).toList()));
-            try {
-                sensitiveContentFilterService.logSensitiveQuery(user.getId(),
-                        dreamText != null ? dreamText : "[только символы]", category);
-            } catch (Exception logEx) {
-                log.error("Не удалось залогировать чувствительный сон: {}", logEx.getMessage());
-            }
+            sensitiveContentFilterService.logLlmDetection(user.getId(),
+                    dreamText != null ? dreamText : "[только символы]", category, DetectionSource.LLM_REFUSAL_FALLBACK, null);
             log.info("AI отказался разбирать сон: userId={}, category={}", user.getId(), category);
             throw new SensitiveContentBlockedException(category);
         } catch (DreamGenerationException genEx) {
@@ -196,6 +221,22 @@ public class DreamService {
         DreamReading reading = dreamReadingRepository.findByIdAndUserId(dreamId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Разбор сна не найден"));
         return deserialize(reading.getPayload());
+    }
+
+    /**
+     * {@code CompletableFuture.join()} оборачивает исключения из supplier'а в
+     * {@link CompletionException}, теряя исходный тип — а {@link DreamRefusedException}/
+     * {@link DreamGenerationException} должны доходить до catch-блоков выше как есть.
+     */
+    private <T> T unwrapJoin(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException ce) {
+            if (ce.getCause() instanceof RuntimeException re) {
+                throw re;
+            }
+            throw ce;
+        }
     }
 
     private String serialize(Object obj) {

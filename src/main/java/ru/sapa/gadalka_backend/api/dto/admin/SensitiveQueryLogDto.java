@@ -12,6 +12,9 @@ public record SensitiveQueryLogDto(
         String firstName,
         String question,
         String category,
+        String source,
+        String explanation,
+        String rawClassificationOutput,
         OffsetDateTime detectedAt
 ) {
     public static SensitiveQueryLogDto from(SensitiveQueryLog log, User user) {
@@ -22,6 +25,9 @@ public record SensitiveQueryLogDto(
                 user != null ? user.getFirstName() : null,
                 log.getQuestion(),
                 log.getCategory().name(),
+                log.getSource() != null ? log.getSource().name() : null,
+                log.getExplanation(),
+                log.getRawClassificationOutput(),
                 log.getDetectedAt()
         );
     }

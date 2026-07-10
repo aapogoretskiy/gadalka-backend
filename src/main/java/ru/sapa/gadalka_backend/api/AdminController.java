@@ -20,6 +20,7 @@ import ru.sapa.gadalka_backend.api.dto.admin.FeatureBadgesDto;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.InboxMessageStatsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.SensitiveQueryLogDto;
+import ru.sapa.gadalka_backend.api.dto.admin.UserSensitivityProfileDto;
 import ru.sapa.gadalka_backend.api.dto.admin.payment.TransactionDetailsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.report.AdminReportDto;
 import ru.sapa.gadalka_backend.api.dto.feedback.CloseTicketRequest;
@@ -33,6 +34,7 @@ import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.FeedbackTargetType;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
+import ru.sapa.gadalka_backend.domain.type.RiskLevel;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.SupportTicketStatus;
 import ru.sapa.gadalka_backend.repository.ActionFeedbackRepository;
@@ -50,6 +52,7 @@ import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
+import ru.sapa.gadalka_backend.repository.UserSensitivityProfileRepository;
 import ru.sapa.gadalka_backend.service.AdminPaymentService;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FeatureBadgeService;
@@ -58,6 +61,7 @@ import ru.sapa.gadalka_backend.service.InboxService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
+import ru.sapa.gadalka_backend.service.SensitiveContentBackfillService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
 
 import java.time.LocalDateTime;
@@ -140,6 +144,8 @@ public class AdminController {
     private final FeatureCostService featureCostService;
     private final FeatureBadgeService featureBadgeService;
     private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
+    private final UserSensitivityProfileRepository userSensitivityProfileRepository;
+    private final SensitiveContentBackfillService sensitiveContentBackfillService;
     private final AdminPaymentService adminPaymentService;
 
     /**
@@ -1182,17 +1188,23 @@ public class AdminController {
     @GetMapping("/sensitive-queries")
     public ResponseEntity<Page<SensitiveQueryLogDto>> getSensitiveQueries(
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) Long userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request) {
 
         Long adminId = (Long) request.getAttribute("adminTelegramId");
-        log.info("Admin {} запросил чувствительные запросы: category={}, page={}", adminId, category, page);
+        log.info("Admin {} запросил чувствительные запросы: category={}, userId={}, page={}", adminId, category, userId, page);
 
         PageRequest pageable = PageRequest.of(page, Math.min(size, 100));
 
         Page<SensitiveQueryLogDto> result;
-        if (category != null && !category.isBlank()) {
+        if (userId != null) {
+            // Drill-down по конкретному пользователю — для карточки рейтинга во вкладке "Рейтинг"
+            result = sensitiveQueryLogRepository
+                    .findByUserIdOrderByDetectedAtDesc(userId, pageable)
+                    .map(log -> SensitiveQueryLogDto.from(log, userRepository.findById(log.getUserId()).orElse(null)));
+        } else if (category != null && !category.isBlank()) {
             SensitiveContentCategory cat = SensitiveContentCategory.valueOf(category.toUpperCase());
             result = sensitiveQueryLogRepository
                     .findByCategoryOrderByDetectedAtDesc(cat, pageable)
@@ -1203,6 +1215,62 @@ public class AdminController {
                     .map(log -> SensitiveQueryLogDto.from(log, userRepository.findById(log.getUserId()).orElse(null)));
         }
 
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * GET /api/admin/sensitivity-profiles?riskLevel=RED&page=0&size=20
+     *
+     * <p>Рейтинг "склонности к чувствительным вопросам" по пользователям, отсортирован
+     * по проценту убыв. {@code riskLevel} опционален (GREEN/YELLOW/RED) — без него все уровни.
+     * Для истории конкретного пользователя — {@code GET /api/admin/sensitive-queries?userId=}.
+     */
+    @GetMapping("/sensitivity-profiles")
+    public ResponseEntity<Page<UserSensitivityProfileDto>> getSensitivityProfiles(
+            @RequestParam(required = false) String riskLevel,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил рейтинг чувствительности: riskLevel={}, page={}", adminId, riskLevel, page);
+
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 100));
+
+        Page<UserSensitivityProfileDto> result;
+        if (riskLevel != null && !riskLevel.isBlank()) {
+            RiskLevel level = RiskLevel.valueOf(riskLevel.toUpperCase());
+            result = userSensitivityProfileRepository
+                    .findByRiskLevelOrderBySensitivePercentageDesc(level, pageable)
+                    .map(profile -> UserSensitivityProfileDto.from(profile, userRepository.findById(profile.getUserId()).orElse(null)));
+        } else {
+            result = userSensitivityProfileRepository
+                    .findAllByOrderBySensitivePercentageDesc(pageable)
+                    .map(profile -> UserSensitivityProfileDto.from(profile, userRepository.findById(profile.getUserId()).orElse(null)));
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * POST /api/admin/sensitive-queries/backfill
+     *
+     * <p>Разовый (перезапускаемый) проход по уже существующим вопросам keyword+LLM
+     * классификатором — восполняет то, что фильтр пропустил на момент вопроса
+     * (например, из-за более узкого на тот момент списка ключевых слов). Синхронный —
+     * при большом объёме истории может занять заметное время, поэтому доступен только
+     * полным ADMIN, не MODERATOR.
+     */
+    @PostMapping("/sensitive-queries/backfill")
+    public ResponseEntity<?> runSensitiveContentBackfill(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        if (!isFullAdmin(request)) {
+            log.warn("telegramId={} (роль не ADMIN) попытался запустить бэкафилл чувствительного контента", adminId);
+            return ResponseEntity.status(403).body(Map.of("message", "Бэкафилл доступен только администраторам"));
+        }
+
+        log.info("Admin {} запустил бэкафилл чувствительного контента", adminId);
+        SensitiveContentBackfillService.BackfillResult result = sensitiveContentBackfillService.runFullBackfill();
         return ResponseEntity.ok(result);
     }
 

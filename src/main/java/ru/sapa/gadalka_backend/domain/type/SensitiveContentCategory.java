@@ -20,5 +20,9 @@ public enum SensitiveContentCategory {
     /** Поиск пропавших людей, определение виновности */
     MISSING_PERSONS_GUILT,
     /** LLM отказал, но ключевые слова не сработали — пограничный случай */
-    LLM_REFUSED
+    LLM_REFUSED,
+    /** Явный результат LLM-классификатора: вопрос признан безопасным */
+    NOT_SENSITIVE,
+    /** LLM так и не вернула ожидаемый формат ответа после всех ретраев — блокируем fail-closed */
+    CLASSIFICATION_FAILED
 }

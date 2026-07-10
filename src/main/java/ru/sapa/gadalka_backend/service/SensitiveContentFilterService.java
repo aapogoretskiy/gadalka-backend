@@ -6,10 +6,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.domain.SensitiveQueryLog;
+import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,21 +26,44 @@ import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.AI_PROVIDER
  * <p>Уровень 1 — {@link #detectByKeywords}: мгновенно, бесплатно, без LLM.
  * Ловит очевидные случаи по ключевым корням.
  *
- * <p>Уровень 2 — {@link #isLlmRefusal}: анализирует ответ LLM на паттерны отказа.
- * Вызывается уже после LLM-запроса — без доп. затрат.
+ * <p>Уровень 2 — {@link #classifyByLlmPreCheck}: LLM-классификатор ДО генерации
+ * интерпретации (реальное время, запускается параллельно с генерацией). В отличие
+ * от уровня 1 понимает семантику ("жив ли Владимир" реальный человек vs "жив ли кот
+ * Владимир" питомец), с валидацией формата ответа и ретраями, fail-closed при провале.
  *
- * <p>Уровень 3 — {@link #classifyByLlm}: дешёвый отдельный LLM-вызов (~200 токенов).
- * Срабатывает только в редком случае: keyword-фильтр промахнулся, но LLM всё равно отказал.
- * Нужен исключительно для корректного логирования категории.
+ * <p>Уровень 3 — {@link #isLlmRefusal}: анализирует уже сгенерированный ответ LLM
+ * на паттерны отказа — страховка на случай, если первые два уровня всё-таки пропустили.
+ *
+ * <p>{@link #classifyByLlm} — вспомогательный дешёвый вызов только для того, чтобы
+ * определить категорию уже точно отказанного вопроса (для логирования в уровне 3).
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SensitiveContentFilterService {
 
+    /** Ожидаемые слова в ответе LLM-классификатора: 9 категорий + NOT_SENSITIVE (без LLM_REFUSED/CLASSIFICATION_FAILED — это служебные значения, LLM их никогда не должна возвращать). */
+    private static final Set<String> VALID_PRECHECK_LABELS = buildValidPrecheckLabels();
+
+    private static final int PRECHECK_MAX_ATTEMPTS = 3;
+
+    private static Set<String> buildValidPrecheckLabels() {
+        Set<String> labels = new HashSet<>();
+        for (SensitiveContentCategory category : SensitiveContentCategory.values()) {
+            if (category == SensitiveContentCategory.LLM_REFUSED
+                    || category == SensitiveContentCategory.CLASSIFICATION_FAILED) {
+                continue;
+            }
+            labels.add(category.name());
+        }
+        return labels;
+    }
+
     private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
     private final AiInterpretationManager interpretationManager;
     private final SystemConfigService systemConfigService;
+    private final SensitiveExplanationAsyncService explanationAsyncService;
+    private final UserSensitivityProfileService userSensitivityProfileService;
 
     // ── Ключевые слова по категориям ───────────────────────────────────────
     // Нормализованные корни (будут нормализованы вместе с текстом пользователя).
@@ -112,7 +137,16 @@ public class SensitiveContentFilterService {
      * @return категория чувствительного контента, либо empty если вопрос безопасен
      */
     public Optional<SensitiveContentCategory> detectByKeywords(String question) {
-        return detectByKeywords(question, Set.of(SensitiveContentCategory.values()));
+        return detectByKeywordsWithMatch(question).map(KeywordMatch::category);
+    }
+
+    /**
+     * То же самое, но вместе с категорией отдаёт и само сработавшее слово/корень —
+     * используется для заполнения поля {@code explanation} в логе (детерминировано,
+     * без обращения к LLM: для keyword-совпадения "почему" уже известно точно).
+     */
+    public Optional<KeywordMatch> detectByKeywordsWithMatch(String question) {
+        return detectByKeywordsWithMatch(question, Set.of(SensitiveContentCategory.values()));
     }
 
     /**
@@ -123,10 +157,17 @@ public class SensitiveContentFilterService {
      * такой запрос требует ответа с телефоном доверия, а не мистической трактовки).
      */
     public Optional<SensitiveContentCategory> detectByKeywordsForDream(String dreamText) {
-        return detectByKeywords(dreamText, Set.of(
+        return detectByKeywordsForDreamWithMatch(dreamText).map(KeywordMatch::category);
+    }
+
+    public Optional<KeywordMatch> detectByKeywordsForDreamWithMatch(String dreamText) {
+        return detectByKeywordsWithMatch(dreamText, Set.of(
                 SensitiveContentCategory.POLITICAL_RELIGIOUS,
                 SensitiveContentCategory.SELF_HARM_SUICIDE));
     }
+
+    /** Категория + конкретное сработавшее слово/корень (для explanation в логе) */
+    public record KeywordMatch(SensitiveContentCategory category, String matchedTerm) {}
 
     /**
      * Общая реализация keyword-детекции с ограничением по набору категорий:
@@ -134,8 +175,8 @@ public class SensitiveContentFilterService {
      * слова даже не проверяются), а не отфильтровываются после первого совпадения —
      * иначе «безопасное» совпадение могло бы замаскировать «опасное».
      */
-    private Optional<SensitiveContentCategory> detectByKeywords(String question,
-                                                                Set<SensitiveContentCategory> categoriesToCheck) {
+    private Optional<KeywordMatch> detectByKeywordsWithMatch(String question,
+                                                              Set<SensitiveContentCategory> categoriesToCheck) {
         if (question == null || question.isBlank()) return Optional.empty();
 
         String normalized = normalize(question);
@@ -146,7 +187,7 @@ public class SensitiveContentFilterService {
             for (String word : entry.getValue()) {
                 if (containsExactWord(normalized, normalize(word))) {
                     log.info("Keyword-фильтр (точное слово): '{}', категория={}", word, entry.getKey());
-                    return Optional.of(entry.getKey());
+                    return Optional.of(new KeywordMatch(entry.getKey(), word));
                 }
             }
         }
@@ -157,7 +198,7 @@ public class SensitiveContentFilterService {
             for (String root : entry.getValue()) {
                 if (normalized.contains(normalize(root))) {
                     log.info("Keyword-фильтр (корень): '{}', категория={}", root, entry.getKey());
-                    return Optional.of(entry.getKey());
+                    return Optional.of(new KeywordMatch(entry.getKey(), root));
                 }
             }
         }
@@ -199,19 +240,156 @@ public class SensitiveContentFilterService {
         }
     }
 
+    /** Результат pre-check классификации: категория (в т.ч. NOT_SENSITIVE/CLASSIFICATION_FAILED) + сырой ответ при провале формата */
+    public record PreCheckResult(SensitiveContentCategory category, String rawOutput) {
+        public boolean isBlocked() {
+            return category != SensitiveContentCategory.NOT_SENSITIVE;
+        }
+    }
+
+    /**
+     * LLM-классификатор ДО генерации интерпретации — используется и в реальном времени
+     * (параллельно с генерацией), и в бэкафилле истории.
+     *
+     * <p>Ответ модели строго валидируется против ожидаемых 10 слов (9 категорий +
+     * NOT_SENSITIVE). При несовпадении — до {@value #PRECHECK_MAX_ATTEMPTS} попыток
+     * (повторный вызов того же вопроса; LLM стохастична, чаще всего пересэмплирование
+     * само чинит разовую формат-ошибку). Если после всех попыток формат так и не сошёлся —
+     * fail-closed: возвращаем {@code CLASSIFICATION_FAILED} вместе с сырым текстом
+     * последней попытки (для {@code raw_classification_output} в логе).
+     */
+    public PreCheckResult classifyByLlmPreCheck(String question) {
+        String provider = systemConfigService.getValue(AI_PROVIDER);
+        String lastRaw = null;
+
+        for (int attempt = 1; attempt <= PRECHECK_MAX_ATTEMPTS; attempt++) {
+            try {
+                lastRaw = interpretationManager.classifyQuestionSensitivity(provider, question);
+            } catch (Exception e) {
+                log.warn("Ошибка вызова LLM pre-check (попытка {}/{}): {}", attempt, PRECHECK_MAX_ATTEMPTS, e.getMessage());
+                lastRaw = null;
+                continue;
+            }
+
+            String normalized = normalizeLabel(lastRaw);
+            if (VALID_PRECHECK_LABELS.contains(normalized)) {
+                return new PreCheckResult(SensitiveContentCategory.valueOf(normalized), null);
+            }
+            log.warn("LLM pre-check вернул не ожидаемый формат (попытка {}/{}): '{}'",
+                    attempt, PRECHECK_MAX_ATTEMPTS, lastRaw);
+        }
+
+        log.error("LLM pre-check не вернул валидный формат после {} попыток — fail-closed. Сырой ответ: '{}'",
+                PRECHECK_MAX_ATTEMPTS, lastRaw);
+        return new PreCheckResult(SensitiveContentCategory.CLASSIFICATION_FAILED, lastRaw);
+    }
+
+    private String normalizeLabel(String raw) {
+        if (raw == null) return "";
+        return raw.trim().toUpperCase().replaceAll("[^A-Z_]", "");
+    }
+
+    /**
+     * Pre-check для Сонника: та же LLM-классификация, что и {@link #classifyByLlmPreCheck},
+     * но результат интерпретируется в мягком режиме — так же, как {@link #detectByKeywordsForDream}
+     * работает поверх той же карты ключевых слов, что и обычный {@link #detectByKeywords}.
+     * Образы смерти/болезни/насилия в описании сна — норма, поэтому категории вроде
+     * DEATH_MORTALITY или HEALTH_MEDICAL от классификатора здесь НЕ блокируют; жёстко
+     * блокируются только POLITICAL_RELIGIOUS и SELF_HARM_SUICIDE (и CLASSIFICATION_FAILED —
+     * fail-closed остаётся fail-closed независимо от контекста).
+     */
+    public PreCheckResult classifyByLlmPreCheckForDream(String dreamText) {
+        PreCheckResult raw = classifyByLlmPreCheck(dreamText);
+        if (raw.category() == SensitiveContentCategory.CLASSIFICATION_FAILED) {
+            return raw;
+        }
+        boolean blocksInDreamContext = raw.category() == SensitiveContentCategory.POLITICAL_RELIGIOUS
+                || raw.category() == SensitiveContentCategory.SELF_HARM_SUICIDE;
+        return blocksInDreamContext ? raw : new PreCheckResult(SensitiveContentCategory.NOT_SENSITIVE, null);
+    }
+
     /**
      * Логирует чувствительный запрос в БД.
      * Выполняется в <b>отдельной транзакции</b> — запись фиксируется независимо
      * от того, откатится ли внешняя транзакция (например, при броске исключения).
+     *
+     * @return сохранённая запись (нужен id — для асинхронного дозаполнения explanation)
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void logSensitiveQuery(Long userId, String question, SensitiveContentCategory category) {
-        sensitiveQueryLogRepository.save(SensitiveQueryLog.builder()
+    public SensitiveQueryLog logSensitiveQuery(Long userId, String question, SensitiveContentCategory category,
+                                                DetectionSource source, String rawClassificationOutput, String explanation) {
+        SensitiveQueryLog saved = sensitiveQueryLogRepository.save(SensitiveQueryLog.builder()
                 .userId(userId)
                 .question(question)
                 .category(category)
+                .source(source)
+                .rawClassificationOutput(rawClassificationOutput)
+                .explanation(explanation)
                 .build());
-        log.info("Залогирован чувствительный запрос: userId={}, category={}", userId, category);
+        log.info("Залогирован чувствительный запрос: userId={}, category={}, source={}", userId, category, source);
+        return saved;
+    }
+
+    /** Keyword-источник: explanation уже известен детерминированно (сработавшее слово), LLM не вызываем. */
+    public SensitiveQueryLog logKeywordMatch(Long userId, String question, KeywordMatch match, DetectionSource source) {
+        SensitiveQueryLog saved = logSensitiveQuery(userId, question, match.category(), source, null,
+                "Сработало ключевое слово: \"" + match.matchedTerm() + "\"");
+        userSensitivityProfileService.recomputeProfile(userId);
+        return saved;
+    }
+
+    /**
+     * Запись при бэкафилле — то же самое, но с явным {@code detectedAt}, выставленным
+     * в дату исходного вопроса (не "сейчас"): иначе вся история в админке выглядела бы
+     * так, будто все старые вопросы обнаружены сегодня.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public SensitiveQueryLog logBackfillEntry(Long userId, String question, SensitiveContentCategory category,
+                                               DetectionSource source, String rawClassificationOutput,
+                                               String explanation, java.time.OffsetDateTime detectedAt) {
+        SensitiveQueryLog saved = sensitiveQueryLogRepository.save(SensitiveQueryLog.builder()
+                .userId(userId)
+                .question(question)
+                .category(category)
+                .source(source)
+                .rawClassificationOutput(rawClassificationOutput)
+                .explanation(explanation)
+                .detectedAt(detectedAt)
+                .build());
+        log.info("Бэкафилл: залогирован исторический чувствительный запрос: userId={}, category={}, source={}",
+                userId, category, source);
+        return saved;
+    }
+
+    /**
+     * Синхронное объяснение для бэкафилла — в отличие от реального времени тут нет
+     * живого пользователя, которого нельзя тормозить, поэтому асинхронность не нужна.
+     */
+    public String explainForBackfill(String question, SensitiveContentCategory category) {
+        try {
+            String provider = systemConfigService.getValue(AI_PROVIDER);
+            return interpretationManager.explainSensitiveClassification(provider, question, category.name());
+        } catch (Exception e) {
+            log.warn("Не удалось получить объяснение при бэкафилле: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * LLM-источник (pre-check в реальном времени или отказ на генерации) — логируем сразу,
+     * а объяснение для админки дозаполняем асинхронно, чтобы не тормозить ответ пользователю.
+     * Для CLASSIFICATION_FAILED объяснение не запрашиваем — там дебажный сигнал уже есть
+     * в rawClassificationOutput, а спрашивать LLM "почему ты не смогла ответить в формате"
+     * бессмысленно и ненадёжно.
+     */
+    public SensitiveQueryLog logLlmDetection(Long userId, String question, SensitiveContentCategory category,
+                                              DetectionSource source, String rawClassificationOutput) {
+        SensitiveQueryLog saved = logSensitiveQuery(userId, question, category, source, rawClassificationOutput, null);
+        if (category != SensitiveContentCategory.CLASSIFICATION_FAILED) {
+            explanationAsyncService.fetchAndAttachExplanationAsync(saved.getId(), question, category);
+        }
+        userSensitivityProfileService.recomputeProfile(userId);
+        return saved;
     }
 
     /**

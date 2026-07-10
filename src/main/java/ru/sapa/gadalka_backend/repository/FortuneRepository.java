@@ -18,6 +18,9 @@ public interface FortuneRepository extends JpaRepository<Fortune, Long> {
 
     boolean existsByUserId(Long userId);
 
+    /** Знаменатель для рейтинга "склонности к чувствительным вопросам" — см. UserSensitivityProfileService. */
+    long countByUserId(Long userId);
+
     // ── История действий пользователя ────────────────────────────────────────
 
     List<Fortune> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);

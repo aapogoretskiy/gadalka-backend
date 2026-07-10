@@ -99,6 +99,16 @@ public class MockAiInterpretationService implements AiInterpretationService {
     }
 
     @Override
+    public String classifyQuestionSensitivity(String question) {
+        return "NOT_SENSITIVE";
+    }
+
+    @Override
+    public String explainSensitiveClassification(String question, String category) {
+        return "Мок-объяснение для категории " + category + ".";
+    }
+
+    @Override
     public String getProvider() {
         return "mock";
     }

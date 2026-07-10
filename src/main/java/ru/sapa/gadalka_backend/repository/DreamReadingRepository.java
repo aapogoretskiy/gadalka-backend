@@ -21,6 +21,9 @@ public interface DreamReadingRepository extends JpaRepository<DreamReading, Long
     /** «Недавние сны» на экране Сонника + история действий в админке. */
     List<DreamReading> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
+    /** Знаменатель для рейтинга "склонности к чувствительным вопросам" — см. UserSensitivityProfileService. */
+    long countByUserId(Long userId);
+
     // ── Отчёты — стандартные методы ──────────────────────────────────────────
     long countByCreatedAtAfter(OffsetDateTime from);
     long countByCreatedAtBetween(OffsetDateTime from, OffsetDateTime to);

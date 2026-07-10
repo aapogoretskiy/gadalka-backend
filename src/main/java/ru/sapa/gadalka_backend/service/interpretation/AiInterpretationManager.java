@@ -51,6 +51,16 @@ public class AiInterpretationManager {
         return getService(provider).classifySensitiveContent(question);
     }
 
+    public String classifyQuestionSensitivity(String provider, String question) {
+        log.debug("Пре-чек чувствительности вопроса через провайдер '{}'", provider);
+        return getService(provider).classifyQuestionSensitivity(question);
+    }
+
+    public String explainSensitiveClassification(String provider, String question, String category) {
+        log.debug("Запрос объяснения категории '{}' через провайдер '{}'", category, provider);
+        return getService(provider).explainSensitiveClassification(question, category);
+    }
+
     private AiInterpretationService getService(String provider) {
         AiInterpretationService service = strategies.get(provider);
         if (service == null) {
