@@ -562,7 +562,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                 MISSING_PERSONS_GUILT — поиск пропавших, определение виновности;
                 LLM_REFUSED — не подходит ни под одну из категорий выше.""";
 
-        return callAi("Вопрос: " + question, systemPrompt, 20);
+        return callAi("Вопрос: " + question, systemPrompt, 100);
     }
 
     /**
@@ -630,7 +630,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                 Отвечай СТРОГО одним словом из списка выше или NOT_SENSITIVE — \
                 без пояснений, без пробелов, без знаков препинания.""";
 
-        return callAi("Вопрос: " + question, systemPrompt, "", 20);
+        return callAi("Вопрос: " + question, systemPrompt, "", 100);
     }
 
     /**
