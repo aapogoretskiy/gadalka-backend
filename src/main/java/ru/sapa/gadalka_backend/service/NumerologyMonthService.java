@@ -327,4 +327,8 @@ public class NumerologyMonthService {
 
     private record DayResonance(LocalDate date, int dayCode, int score) {
     }
+
+    /** Границы одного недельного блока внутри месяца (включительно). */
+    private record WeekBlock(LocalDate start, LocalDate end) {
+    }
 }
