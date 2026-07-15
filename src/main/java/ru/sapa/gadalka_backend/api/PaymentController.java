@@ -10,12 +10,16 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.sapa.gadalka_backend.api.dto.payment.*;
+import ru.sapa.gadalka_backend.configuration.AdminProperties;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
+import ru.sapa.gadalka_backend.service.FeatureCostService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.PaymentWebhookAckService;
 import ru.sapa.gadalka_backend.service.ProductCatalogService;
+import ru.sapa.gadalka_backend.service.SubscriptionQuotaService;
 import ru.sapa.gadalka_backend.service.robokassa.RobokassaPageService;
 
 import java.net.URI;
@@ -29,6 +33,9 @@ public class PaymentController extends BaseController {
 
     private final ProductCatalogService productCatalogService;
     private final FortuneCreditService fortuneCreditService;
+    private final SubscriptionQuotaService subscriptionQuotaService;
+    private final FeatureCostService featureCostService;
+    private final AdminProperties adminProperties;
     private final PaymentService paymentService;
     private final PaymentWebhookAckService webhookAckService;
     private final RobokassaPageService robokassaPageService;
@@ -78,8 +85,35 @@ public class PaymentController extends BaseController {
     public ResponseEntity<BalanceResponse> getBalance(HttpServletRequest request) {
         User user = resolveUser(request);
         int balance = fortuneCreditService.getBalance(user.getId());
-        boolean hasSubscription = fortuneCreditService.canUseFeature(user.getId()) && balance == 0;
-        return ResponseEntity.ok(new BalanceResponse(balance, hasSubscription));
+        boolean hasSubscription = subscriptionQuotaService.findActiveSubscription(user.getId()).isPresent();
+        // Фича-гейт закрытого теста подписок: см. SubscriptionController.assertSubscriptionsAvailable
+        boolean subscriptionsAvailable = adminProperties.isAdmin(user.getTelegramId());
+        return ResponseEntity.ok(new BalanceResponse(balance, hasSubscription, subscriptionsAvailable));
+    }
+
+    /**
+     * GET /api/v1/payments/spend-options?feature=THREE_CARD
+     * Чем пользователь может оплатить конкретную фичу: знаки (стоимость, баланс)
+     * и/или квота подписки (остаток). Данные для модалки подтверждения списания.
+     */
+    @GetMapping("/spend-options")
+    public ResponseEntity<SpendOptionsResponse> getSpendOptions(@RequestParam DiaryFeatureType feature,
+                                                                HttpServletRequest request) {
+        User user = resolveUser(request);
+        int cost = featureCostService.getCost(feature);
+        int balance = fortuneCreditService.getBalance(user.getId());
+
+        var quotaState = subscriptionQuotaService.getQuotaState(user.getId(), feature);
+
+        return ResponseEntity.ok(new SpendOptionsResponse(
+                cost,
+                balance,
+                balance >= cost,
+                quotaState.isPresent(),
+                quotaState.map(SubscriptionQuotaService.QuotaState::remaining).orElse(0),
+                quotaState.map(SubscriptionQuotaService.QuotaState::total).orElse(0),
+                quotaState.map(q -> q.period().name()).orElse(null)
+        ));
     }
 
     /**

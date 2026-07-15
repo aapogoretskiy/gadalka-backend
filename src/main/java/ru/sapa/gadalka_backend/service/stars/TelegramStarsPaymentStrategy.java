@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.PaymentProduct;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
+import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.service.PaymentProviderStrategy;
 
 /**
@@ -48,7 +49,11 @@ public class TelegramStarsPaymentStrategy implements PaymentProviderStrategy {
      */
     @Override
     public String initiatePayment(Payment payment, PaymentProduct product) {
-        String invoiceLink = starsService.createInvoiceLink(payment.getId(), product);
+        // Для подписки — своё описание в окне оплаты (product здесь — транзиентное представление плана)
+        String description = payment.getPurchaseType() == PurchaseType.SUBSCRIPTION
+                ? "Оформление подписки в MagicLiora"
+                : "Пополнение баланса знаков в MagicLiora";
+        String invoiceLink = starsService.createInvoiceLink(payment.getId(), product, description);
 
         log.info("Stars invoice создан: internalId={}, stars={}",
                 payment.getId(), product.getPriceStars());

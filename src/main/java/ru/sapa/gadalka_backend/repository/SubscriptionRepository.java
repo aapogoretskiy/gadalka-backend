@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 import ru.sapa.gadalka_backend.domain.Subscription;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
@@ -20,4 +21,17 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             """)
     Optional<Subscription> findActiveByUserId(@Param("userId") Long userId,
                                               @Param("now") OffsetDateTime now);
+
+    /**
+     * Активные подписки, истекающие до указанного момента —
+     * кандидаты на напоминание (см. SubscriptionReminderScheduler).
+     */
+    @Query("""
+            SELECT s FROM Subscription s
+            WHERE s.status = 'ACTIVE'
+              AND s.expiresAt > :now
+              AND s.expiresAt < :until
+            """)
+    List<Subscription> findActiveExpiringBefore(@Param("now") OffsetDateTime now,
+                                                @Param("until") OffsetDateTime until);
 }

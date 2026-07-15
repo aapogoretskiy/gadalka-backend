@@ -14,6 +14,7 @@ import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyMonthResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyPortraitResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
 import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyYearResponse;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.service.NumerologyDayService;
 import ru.sapa.gadalka_backend.service.NumerologyMonthService;
 import ru.sapa.gadalka_backend.service.NumerologyPortraitService;
@@ -49,9 +50,11 @@ public class NumerologyController extends BaseController {
                     Если у пользователя уже есть оплаченный и ещё действующий расклад (today входит в его 7-дневное окно),
                     повторное списание не происходит — отдаётся тот же расклад.
                     Требует указанной даты рождения в профиле (422, если её нет) и достаточного баланса знаков (402, если не хватает).
+                    Параметр spendMode: CREDITS (знаки, по умолчанию) или QUOTA (квота подписки).
                     """)
-    public NumerologyWeekResponse getWeek(HttpServletRequest request) {
-        return numerologyWeekService.getWeek(resolveUser(request).getId());
+    public NumerologyWeekResponse getWeek(HttpServletRequest request,
+                                          @RequestParam(defaultValue = "CREDITS") SpendMode spendMode) {
+        return numerologyWeekService.getWeek(resolveUser(request).getId(), spendMode);
     }
 
     @GetMapping("/portrait")
@@ -121,8 +124,9 @@ public class NumerologyController extends BaseController {
                     4 недели внутри месяца включены в стоимость и создаются бесплатно.
                     Требует указанной даты рождения в профиле (422) и достаточного баланса знаков (402).
                     """)
-    public NumerologyMonthResponse getMonth(HttpServletRequest request) {
-        return numerologyMonthService.getMonth(resolveUser(request).getId());
+    public NumerologyMonthResponse getMonth(HttpServletRequest request,
+                                            @RequestParam(defaultValue = "CREDITS") SpendMode spendMode) {
+        return numerologyMonthService.getMonth(resolveUser(request).getId(), spendMode);
     }
 
     @GetMapping("/month/current")
@@ -163,8 +167,9 @@ public class NumerologyController extends BaseController {
                     месяца создаётся отдельно и бесплатно через /month/by-date по клику.
                     Требует указанной даты рождения в профиле (422) и достаточного баланса знаков (402).
                     """)
-    public NumerologyYearResponse getYear(HttpServletRequest request) {
-        return numerologyYearService.getYear(resolveUser(request).getId());
+    public NumerologyYearResponse getYear(HttpServletRequest request,
+                                          @RequestParam(defaultValue = "CREDITS") SpendMode spendMode) {
+        return numerologyYearService.getYear(resolveUser(request).getId(), spendMode);
     }
 
     @GetMapping("/year/current")

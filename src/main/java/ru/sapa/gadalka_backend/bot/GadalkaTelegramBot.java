@@ -219,6 +219,44 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
+     * Уведомление о подаренных админом квотах — аналог {@link #sendGiftNotification},
+     * но для квот подписки. Вызывается из AdminController#giftQuota.
+     *
+     * @param telegramId Telegram ID получателя
+     * @param quotaText  готовое описание подарка, например «3 × Разбор сна (в день)»
+     */
+    public void sendQuotaGiftNotification(Long telegramId, String quotaText) {
+        String text = "🎁 *Вам подарок от команды Гадалки!*\n\n" +
+                "Вам выданы квоты: *" + quotaText + "*.\n\n" +
+                "Откройте приложение и используйте их для новых предсказаний ✨";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Открыть Гадалку")
+                .webApp(new WebAppInfo(appUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление о подарке-квоте отправлено: telegramId={}", telegramId);
+        } catch (TelegramApiException e) {
+            // Не критично — квоты уже выданы, пользователь мог заблокировать бота
+            log.warn("Не удалось отправить уведомление о подарке-квоте: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+        }
+    }
+
+    /**
      * Отправляет напоминание о брошенной оплате с кнопкой, открывающей Mini App
      * сразу на экране оплаты. Вызывается из {@link ru.sapa.gadalka_backend.service.PaymentRecoveryService}.
      * <p>
@@ -257,6 +295,43 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
             // Не критично: пользователь мог заблокировать бота. Платёж всё равно
             // помечается как "напоминание отправлено", чтобы не долбить повторно.
             log.warn("Не удалось отправить напоминание об оплате: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Напоминание об истечении подписки (за 3/2/0 дней до конца).
+     * Кнопка ведёт на экран оплаты — там пользователь может продлить подписку.
+     * Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionReminderScheduler}.
+     *
+     * @return true — отправлено; false — Telegram отклонил (например, бот заблокирован)
+     */
+    public boolean sendSubscriptionExpiryReminder(Long telegramId, String text) {
+        String payUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=pay";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("🔮 Продлить подписку")
+                .webApp(new WebAppInfo(payUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Напоминание об истечении подписки отправлено: telegramId={}", telegramId);
+            return true;
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось отправить напоминание о подписке: telegramId={}, error={}",
                     telegramId, e.getMessage());
             return false;
         }

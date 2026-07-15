@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
 
 @Getter
@@ -33,4 +35,11 @@ public class FortuneRequest {
      */
     @NotNull(message = "Тип расклада не может быть null")
     private SpreadType spreadType = SpreadType.THREE_CARD;
+
+    /**
+     * Чем оплатить гадание: CREDITS (знаки) или QUOTA (квота подписки).
+     * По умолчанию CREDITS — обратная совместимость со старым фронтом.
+     */
+    @NotNull(message = "Способ оплаты не может быть null")
+    private SpendMode spendMode = SpendMode.CREDITS;
 }

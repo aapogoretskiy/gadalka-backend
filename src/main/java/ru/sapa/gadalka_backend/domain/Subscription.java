@@ -7,10 +7,11 @@ import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import java.time.OffsetDateTime;
 
 /**
- * Подписка пользователя. Таблица создана как задел на будущее.
- * FortuneCreditService.canUseFeature() уже проверяет активные подписки,
- * поэтому добавление подписочной логики в будущем не потребует изменения
- * точек вызова в бизнес-сервисах.
+ * Подписка пользователя. Создаётся при успешной оплате плана из subscription_plans.
+ * Квоты подписки (снапшот из плана) лежат в {@link SubscriptionQuota}.
+ * <p>
+ * v1 — без автопродления: подписка живёт durationDays плана, по истечении
+ * пользователь продлевает вручную (шедулер шлёт напоминания за 3/2/0 дней).
  */
 @Entity
 @Table(name = "subscriptions")
@@ -28,9 +29,28 @@ public class Subscription {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    /** MONTHLY, YEARLY */
+    /** Легаси-поле (MONTHLY/YEARLY). Для новых подписок сюда пишется "PLAN_" + planId */
     @Column(name = "plan", nullable = false, length = 50)
     private String plan;
+
+    /** Ссылка на план каталога. Может быть null у старых/ручных записей */
+    @Column(name = "plan_id")
+    private Long planId;
+
+    /** Снапшот названия плана на момент покупки — план могут переименовать */
+    @Column(name = "plan_name")
+    private String planName;
+
+    /** Момент активации подписки */
+    @Column(name = "started_at")
+    private OffsetDateTime startedAt;
+
+    /**
+     * Последний отправленный "рубеж" напоминания об истечении: 3, 2 или 0 (дней до конца).
+     * NULL — напоминания ещё не отправлялись. Защита от повторной отправки.
+     */
+    @Column(name = "last_reminder_days_left")
+    private Integer lastReminderDaysLeft;
 
     /** ACTIVE, EXPIRED, CANCELLED */
     @Column(name = "status", nullable = false, length = 50)

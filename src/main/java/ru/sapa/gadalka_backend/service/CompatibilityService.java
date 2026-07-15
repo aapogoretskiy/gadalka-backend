@@ -13,6 +13,7 @@ import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
 import ru.sapa.gadalka_backend.domain.CompatibilityReading;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.repository.CompatibilityReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
@@ -39,7 +40,7 @@ public class CompatibilityService {
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
-    private final FortuneCreditService fortuneCreditService;
+    private final FeatureSpendService featureSpendService;
     private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
 
@@ -84,14 +85,14 @@ public class CompatibilityService {
      * Разблокировка полного анализа (стоимость см. {@link FeatureCostService#getCompatibilityUnlockCost()}).
      * Повторный вызов для уже разблокированного расклада — бесплатен.
      */
-    public CompatibilityResponse unlockCompatibility(Long readingId, User user) {
+    public CompatibilityResponse unlockCompatibility(Long readingId, User user, SpendMode spendMode) {
         CompatibilityReading reading = compatibilityReadingRepository
                 .findByIdAndUserId(readingId, user.getId())
                 .orElseThrow(() -> new RuntimeException("Расклад не найден"));
 
         if (reading.getUnlockedAt() == null) {
-            // Ещё не разблокирован — списываем кредит
-            fortuneCreditService.spendCredits(user.getId(), DiaryFeatureType.COMPATIBILITY, featureCostService.getCompatibilityUnlockCost());
+            // Ещё не разблокирован — списываем знаки или квоту подписки (по выбору пользователя)
+            featureSpendService.spend(user.getId(), DiaryFeatureType.COMPATIBILITY, featureCostService.getCompatibilityUnlockCost(), spendMode);
             reading.setUnlockedAt(OffsetDateTime.now());
             compatibilityReadingRepository.save(reading);
             log.info("Расклад совместимости разблокирован: readingId={}, userId={}", readingId, user.getId());

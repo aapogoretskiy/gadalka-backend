@@ -16,6 +16,7 @@ import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
 import ru.sapa.gadalka_backend.domain.NumerologyMonthReading;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.repository.NumerologyMonthReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
@@ -52,17 +53,17 @@ public class NumerologyMonthService {
     private final UserProfileRepository userProfileRepository;
     private final UserRepository userRepository;
     private final DiaryService diaryService;
-    private final FortuneCreditService fortuneCreditService;
+    private final FeatureSpendService featureSpendService;
     private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public NumerologyMonthResponse getMonth(Long userId) {
+    public NumerologyMonthResponse getMonth(Long userId, SpendMode spendMode) {
         LocalDate monthStart = LocalDate.now().withDayOfMonth(1);
 
         return repository.findByUserIdAndMonthStartDate(userId, monthStart)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, monthStart, !ownsYearCovering(userId, monthStart)));
+                .orElseGet(() -> createAndSave(userId, monthStart, !ownsYearCovering(userId, monthStart), spendMode));
     }
 
     /**
@@ -85,7 +86,7 @@ public class NumerologyMonthService {
             return existing;
         }
         if (ownsYearCovering(userId, monthStart)) {
-            return Optional.of(createAndSave(userId, monthStart, false));
+            return Optional.of(createAndSave(userId, monthStart, false, SpendMode.CREDITS));
         }
         return Optional.empty();
     }
@@ -120,10 +121,11 @@ public class NumerologyMonthService {
     public NumerologyMonthResponse createIncludedMonth(Long userId, LocalDate monthStart) {
         return repository.findByUserIdAndMonthStartDate(userId, monthStart)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, monthStart, false));
+                .orElseGet(() -> createAndSave(userId, monthStart, false, SpendMode.CREDITS));
     }
 
-    private NumerologyMonthResponse createAndSave(Long userId, LocalDate monthStart, boolean chargeCredits) {
+    private NumerologyMonthResponse createAndSave(Long userId, LocalDate monthStart,
+                                                  boolean chargeCredits, SpendMode spendMode) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -175,7 +177,7 @@ public class NumerologyMonthService {
 
         int monthCost = featureCostService.getNumerologyMonthCost();
         if (chargeCredits) {
-            fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_MONTH, monthCost);
+            featureSpendService.spend(userId, DiaryFeatureType.NUMEROLOGY_MONTH, monthCost, spendMode);
         }
 
         // Недели внутри месяца включены в его стоимость — создаём (или переиспользуем уже
@@ -324,9 +326,5 @@ public class NumerologyMonthService {
     }
 
     private record DayResonance(LocalDate date, int dayCode, int score) {
-    }
-
-    /** Границы одного недельного блока внутри месяца (включительно). */
-    private record WeekBlock(LocalDate start, LocalDate end) {
     }
 }

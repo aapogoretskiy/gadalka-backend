@@ -4,6 +4,9 @@ public class SystemConfigConstants {
     public static final String AI_PROVIDER = "AI_PROVIDER";
     public static final String BROADCAST_PERSONALIZATION_ENABLED = "BROADCAST_PERSONALIZATION_ENABLED";
 
+    /** Курс Telegram Stars: копеек за 1 звезду (подсказка цены плана подписки в админке) */
+    public static final String STARS_RUB_RATE_KOPECKS = "STARS_RUB_RATE_KOPECKS";
+
     // ── Стоимость платных функций (в знаках) ────────────────────────────────
     public static final String FEATURE_COST_THREE_CARD = "FEATURE_COST_THREE_CARD";
     public static final String FEATURE_COST_HORSESHOE = "FEATURE_COST_HORSESHOE";

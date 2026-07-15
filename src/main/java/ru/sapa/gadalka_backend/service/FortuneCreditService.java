@@ -10,10 +10,7 @@ import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
 import ru.sapa.gadalka_backend.repository.FortuneCreditLogRepository;
-import ru.sapa.gadalka_backend.repository.SubscriptionRepository;
 import ru.sapa.gadalka_backend.repository.UserFortuneCreditRepository;
-
-import java.time.OffsetDateTime;
 
 /**
  * Единственная точка управления балансом знаков.
@@ -29,7 +26,6 @@ public class FortuneCreditService {
 
     private final UserFortuneCreditRepository creditRepository;
     private final FortuneCreditLogRepository creditLogRepository;
-    private final SubscriptionRepository subscriptionRepository;
 
     /**
      * Возвращает текущий баланс знаков.
@@ -43,20 +39,16 @@ public class FortuneCreditService {
     }
 
     /**
-     * Проверяет, может ли пользователь использовать функцию.
-     * Доступ есть если: баланс > 0 ИЛИ есть активная подписка.
+     * Проверяет, может ли пользователь использовать функцию за ЗНАКИ (баланс > 0).
      * <p>
-     * Метод уже готов для будущей подписочной логики — достаточно будет
-     * добавить записи в subscriptions, и проверка заработает автоматически.
+     * С появлением квотных подписок «активная подписка» больше не означает
+     * безлимитный доступ: проверка доступа по квоте живёт в
+     * {@link FeatureSpendService#assertSpendable} и учитывает выбранный
+     * пользователем способ оплаты (знаки или квота).
      */
     @Transactional(readOnly = true)
     public boolean canUseFeature(Long userId) {
-        if (getBalance(userId) > 0) return true;
-
-        // Проверяем активную подписку (сейчас таблица всегда пуста)
-        return subscriptionRepository
-                .findActiveByUserId(userId, OffsetDateTime.now())
-                .isPresent();
+        return getBalance(userId) > 0;
     }
 
     /**
@@ -96,9 +88,9 @@ public class FortuneCreditService {
      * Списывает {@code count} знаков за использование функции.
      * Использует PESSIMISTIC_WRITE lock — защита от гонки при одновременных запросах.
      * <p>
-     * Если у пользователя нет активной подписки и баланс < count → кидает InsufficientCreditsException.
-     * Вызывается ДО выполнения основного действия (AI-запроса и т.д.),
-     * чтобы при нехватке кредитов не тратить ресурсы.
+     * ВАЖНО: раньше здесь был безлимит для подписчиков (списание пропускалось).
+     * С переходом на квотные подписки это убрано: оплата квотой — это явный
+     * выбор пользователя, см. {@link FeatureSpendService} и {@link SubscriptionQuotaService}.
      *
      * @param userId      ID пользователя
      * @param featureType тип использованной функции
@@ -107,16 +99,6 @@ public class FortuneCreditService {
     @Transactional
     public void spendCredits(Long userId, DiaryFeatureType featureType, int count) {
         if (count <= 0) throw new IllegalArgumentException("Количество списываемых кредитов должно быть > 0");
-
-        // Пользователи с активной подпиской не тратят кредиты
-        boolean hasSubscription = subscriptionRepository
-                .findActiveByUserId(userId, OffsetDateTime.now())
-                .isPresent();
-
-        if (hasSubscription) {
-            log.debug("Пользователь с подпиской использует функцию: userId={}, feature={}", userId, featureType);
-            return;
-        }
 
         // Берём строку с блокировкой, чтобы два одновременных запроса не потратили одни кредиты
         UserFortuneCredit credit = creditRepository.findByUserIdForUpdate(userId)

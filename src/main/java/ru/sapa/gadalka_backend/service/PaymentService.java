@@ -5,9 +5,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.PaymentProduct;
+import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
+import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.service.robokassa.RobokassaWebhookParser;
@@ -33,6 +35,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final ProductCatalogService productCatalogService;
     private final FortuneCreditService fortuneCreditService;
+    private final SubscriptionActivationService subscriptionActivationService;
     private final YooKassaWebhookParser yooKassaWebhookParser;
     private final RobokassaWebhookParser robokassaWebhookParser;
 
@@ -46,6 +49,7 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             ProductCatalogService productCatalogService,
             FortuneCreditService fortuneCreditService,
+            SubscriptionActivationService subscriptionActivationService,
             YooKassaWebhookParser yooKassaWebhookParser,
             RobokassaWebhookParser robokassaWebhookParser,
             List<PaymentProviderStrategy> strategies) {
@@ -53,6 +57,7 @@ public class PaymentService {
         this.paymentRepository = paymentRepository;
         this.productCatalogService = productCatalogService;
         this.fortuneCreditService = fortuneCreditService;
+        this.subscriptionActivationService = subscriptionActivationService;
         this.yooKassaWebhookParser = yooKassaWebhookParser;
         this.robokassaWebhookParser = robokassaWebhookParser;
 
@@ -99,6 +104,58 @@ public class PaymentService {
                 payment.getId(), provider, userId, productCode);
 
         return url;
+    }
+
+    /**
+     * Инициирует платёж за ПОДПИСКУ. Отличия от пакета знаков:
+     * purchaseType = SUBSCRIPTION, creditsToGrant = 0, заполнен subscriptionPlanId —
+     * при успешном webhook'е вместо начисления знаков активируется подписка.
+     * <p>
+     * План оборачивается в транзиентный (не сохраняемый) PaymentProduct,
+     * чтобы переиспользовать существующие стратегии провайдеров без изменений:
+     * им от продукта нужны только цены и название (для чека/инвойса).
+     */
+    @Transactional
+    public String createSubscriptionPayment(Long userId, SubscriptionPlan plan, PaymentProvider provider) {
+        PaymentProviderStrategy strategy = getStrategy(provider);
+        PaymentProduct planAsProduct = toTransientProduct(plan);
+
+        Payment payment = Payment.builder()
+                .userId(userId)
+                .productCode("PLAN_" + plan.getId())
+                .purchaseType(PurchaseType.SUBSCRIPTION)
+                .subscriptionPlanId(plan.getId())
+                .provider(provider)
+                .status(PaymentStatus.PENDING)
+                .amountMinor(strategy.getAmountMinor(planAsProduct))
+                .currency(strategy.getCurrency())
+                .creditsToGrant(0)
+                .build();
+        payment = paymentRepository.save(payment);
+
+        String url = strategy.initiatePayment(payment, planAsProduct);
+        paymentRepository.save(payment);
+
+        log.info("Подписочный платёж инициирован: internalId={}, provider={}, userId={}, planId={}", payment.getId(), provider, userId, plan.getId());
+
+        return url;
+    }
+
+    /**
+     * Представление плана подписки в виде продукта для платёжных стратегий.
+     * name попадает в чек Robokassa (номенклатура) и в title Stars-инвойса.
+     */
+    private PaymentProduct toTransientProduct(SubscriptionPlan plan) {
+        return PaymentProduct.builder()
+                .code("PLAN_" + plan.getId())
+                .name("Подписка «" + plan.getName() + "» на " + plan.getDurationDays() + " дней")
+                .priceRub(plan.getPriceRub())
+                .priceStars(plan.getPriceStars())
+                .readingsCount(0)
+                .bonusCredits(0)
+                .isActive(true)
+                .sortOrder(0)
+                .build();
     }
 
     // ──────────────────────────────────────────────
@@ -231,13 +288,20 @@ public class PaymentService {
     }
 
     /**
-     * Финализирует успешный платёж: SUCCEEDED + начисление знаков.
+     * Финализирует успешный платёж: SUCCEEDED + начисление знаков ИЛИ активация подписки.
      * Всё в одной транзакции — либо и то и то, либо ничего.
      */
     @Transactional
     protected void completePayment(Payment payment) {
         payment.setStatus(PaymentStatus.SUCCEEDED);
         paymentRepository.save(payment);
+
+        if (payment.getPurchaseType() == PurchaseType.SUBSCRIPTION) {
+            subscriptionActivationService.activateFromPayment(payment);
+            log.info("Платёж завершён (подписка): internalId={}, userId={}, planId={}",
+                    payment.getId(), payment.getUserId(), payment.getSubscriptionPlanId());
+            return;
+        }
 
         fortuneCreditService.grantCredits(
                 payment.getUserId(),

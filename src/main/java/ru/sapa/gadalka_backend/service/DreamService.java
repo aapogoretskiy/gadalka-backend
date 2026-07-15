@@ -23,7 +23,6 @@ import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
 import ru.sapa.gadalka_backend.domain.type.ZodiacSign;
-import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
 import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.repository.DreamReadingRepository;
 import ru.sapa.gadalka_backend.repository.DreamSymbolRepository;
@@ -71,7 +70,7 @@ public class DreamService {
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
     private final SensitiveContentFilterService sensitiveContentFilterService;
-    private final FortuneCreditService fortuneCreditService;
+    private final FeatureSpendService featureSpendService;
     private final FeatureCostService featureCostService;
     private final DiaryService diaryService;
     private final ObjectMapper objectMapper;
@@ -106,9 +105,8 @@ public class DreamService {
                     "Для разбора сна необходимо указать дату рождения в профиле");
         }
 
-        if (!fortuneCreditService.canUseFeature(user.getId())) {
-            throw new InsufficientCreditsException();
-        }
+        // Проверяем знаки/квоту ДО вызова AI — чтобы не тратить токены впустую
+        featureSpendService.assertSpendable(user.getId(), DiaryFeatureType.DREAM, featureCostService.getDreamCost(), request.getSpendMode());
 
         ZodiacSign zodiacSign = ZodiacSign.fromDate(profile.getBirthDate());
         int lifeNumber = numerologyService.lifePathNumber(profile.getBirthDate());
@@ -160,9 +158,9 @@ public class DreamService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Не удалось разобрать сон — попробуйте ещё раз чуть позже");
         }
 
-        // Ответ валидный — списываем знаки (pessimistic lock внутри защищает от гонок)
+        // Ответ валидный — списываем знаки или квоту (pessimistic lock внутри защищает от гонок)
         int cost = featureCostService.getDreamCost();
-        fortuneCreditService.spendCredits(user.getId(), DiaryFeatureType.DREAM, cost);
+        featureSpendService.spend(user.getId(), DiaryFeatureType.DREAM, cost, request.getSpendMode());
 
         List<String> selectedSymbolNames = selectedSymbols.stream().map(DreamSymbol::getName).toList();
 

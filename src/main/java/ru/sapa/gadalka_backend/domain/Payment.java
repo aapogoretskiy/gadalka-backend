@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
+import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 
 import java.time.OffsetDateTime;
 
@@ -30,9 +31,18 @@ public class Payment {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    /** Код продукта на момент покупки (PACK_3, PACK_7, PACK_15) */
+    /** Код продукта на момент покупки (PACK_3, PACK_7, PACK_15). Для подписок: "PLAN_" + planId */
     @Column(name = "product_code", nullable = false, length = 50)
     private String productCode;
+
+    /** Что покупается: пакет знаков или подписка */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purchase_type", nullable = false, length = 20)
+    private PurchaseType purchaseType;
+
+    /** План подписки — только для purchaseType = SUBSCRIPTION */
+    @Column(name = "subscription_plan_id")
+    private Long subscriptionPlanId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false, length = 50)
@@ -78,6 +88,9 @@ public class Payment {
     void prePersist() {
         createdAt = OffsetDateTime.now();
         updatedAt = OffsetDateTime.now();
+        // Существующие места создания платежей не знают про purchaseType —
+        // по умолчанию это покупка знаков (старое поведение)
+        if (purchaseType == null) purchaseType = PurchaseType.CREDITS;
     }
 
     @PreUpdate

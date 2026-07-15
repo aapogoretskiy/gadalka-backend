@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.AdminDreamSymbolDto;
+import ru.sapa.gadalka_backend.api.dto.admin.AdminGiftQuotaRequest;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureBadgesDto;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
 import ru.sapa.gadalka_backend.api.dto.admin.InboxMessageStatsDto;
@@ -62,6 +63,7 @@ import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
 import ru.sapa.gadalka_backend.service.SensitiveContentBackfillService;
+import ru.sapa.gadalka_backend.service.SubscriptionGiftService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
 
 import java.time.LocalDateTime;
@@ -136,6 +138,7 @@ public class AdminController {
     private final ActionFeedbackRepository actionFeedbackRepository;
     private final ObjectMapper objectMapper;
     private final GadalkaTelegramBot telegramBot;
+    private final SubscriptionGiftService subscriptionGiftService;
     private final BroadcastService broadcastService;
     private final InboxService inboxService;
     private final ReportService reportService;
@@ -680,6 +683,80 @@ public class AdminController {
         telegramBot.sendGiftNotification(user.getTelegramId(), amount);
         log.info("Admin {} подарил {} кредитов пользователю userId={}", adminId, amount, id);
         return ResponseEntity.ok(Map.of("message", "Подарок успешно отправлен"));
+    }
+
+    /**
+     * POST /api/admin/users/{id}/gift-quota
+     * Body: { "featureType": "DREAM", "count": 3, "quotaPeriod": "DAILY", "durationDays": 30 }
+     *
+     * <p>Выдаёт пользователю квоту подписки — аналог «Подарить знаки», но для квот.
+     * Если активной подписки нет — создаётся подарочная на durationDays (см.
+     * {@link SubscriptionGiftService}). Пользователь получает уведомление в бот.
+     */
+    @PostMapping("/users/{id}/gift-quota")
+    public ResponseEntity<?> giftQuota(@PathVariable Long id,
+                                       @RequestBody AdminGiftQuotaRequest body,
+                                       HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+
+        if (body.featureType() == null || body.quotaPeriod() == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Укажите функцию и периодичность квоты"));
+        }
+        if (body.count() == null || body.count() <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Количество квот должно быть > 0"));
+        }
+        int durationDays = body.durationDays() != null ? body.durationDays() : 30;
+
+        Optional<User> userOpt = userRepository.findById(id);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        User user = userOpt.get();
+
+        SubscriptionGiftService.GiftQuotaResult result;
+        try {
+            result = subscriptionGiftService.grantQuota(
+                    user.getId(), body.featureType(), body.count(), body.quotaPeriod(), durationDays);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+
+        // Уведомление в бот: «3 × Разбор сна (в день)»
+        String quotaText = body.count() + " × " + quotaFeatureLabel(body.featureType())
+                + (body.quotaPeriod() == ru.sapa.gadalka_backend.domain.type.QuotaPeriod.DAILY
+                        ? " (в день)" : "");
+        telegramBot.sendQuotaGiftNotification(user.getTelegramId(), quotaText);
+
+        log.info("Admin {} выдал квоту пользователю userId={}: {} x{} ({}), подарочная подписка создана: {}",
+                adminId, id, body.featureType(), body.count(), body.quotaPeriod(), result.giftSubscriptionCreated());
+
+        String message = result.giftSubscriptionCreated()
+                ? "Квоты выданы. Создана подарочная подписка до "
+                        + result.subscriptionExpiresAt().atZoneSameInstant(java.time.ZoneId.of("Europe/Moscow")).toLocalDate()
+                : "Квоты добавлены в активную подписку пользователя";
+        return ResponseEntity.ok(Map.of(
+                "message", message,
+                "giftSubscriptionCreated", result.giftSubscriptionCreated(),
+                "newQuotaCount", result.newQuotaCount()
+        ));
+    }
+
+    /** Человекочитаемая метка фичи для уведомления о подаренной квоте */
+    private String quotaFeatureLabel(DiaryFeatureType featureType) {
+        return switch (featureType) {
+            case THREE_CARD          -> "Расклад «3 карты»";
+            case HORSESHOE           -> "Расклад «Подкова»";
+            case CELTIC_CROSS        -> "Расклад «Кельтский крест»";
+            case COMPATIBILITY       -> "Совместимость";
+            case DREAM               -> "Разбор сна";
+            case NUMEROLOGY_WEEK     -> "Нумерология недели";
+            case NUMEROLOGY_MONTH    -> "Нумерология месяца";
+            case NUMEROLOGY_YEAR     -> "Нумерология года";
+            case DAILY_CARD          -> "Карта дня";
+            case NUMEROLOGY_DAY      -> "Нумерология дня";
+            case DAILY_HOROSCOPE     -> "Гороскоп дня";
+            case NUMEROLOGY_PORTRAIT -> "Нумерологический портрет";
+        };
     }
 
     /**

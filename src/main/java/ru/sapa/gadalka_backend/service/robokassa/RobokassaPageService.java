@@ -5,8 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.PaymentProduct;
+import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
+import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
 import ru.sapa.gadalka_backend.service.ProductCatalogService;
 
 /**
@@ -25,6 +28,7 @@ public class RobokassaPageService {
 
     private final PaymentRepository paymentRepository;
     private final ProductCatalogService productCatalogService;
+    private final SubscriptionPlanRepository planRepository;
     private final RobokassaClient robokassaClient;
 
     /**
@@ -37,15 +41,27 @@ public class RobokassaPageService {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new PaymentNotFoundException(paymentId));
 
-        PaymentProduct product = productCatalogService.getActiveProduct(payment.getProductCode());
+        // Название для номенклатуры чека: пакет знаков берём из каталога,
+        // подписку — из плана (в каталоге продуктов её нет)
+        String itemName = resolveItemName(payment);
 
         log.debug("Строим страницу Robokassa: paymentId={}, product={}, amount={}",
-                paymentId, product.getCode(), payment.getAmountMinor());
+                paymentId, payment.getProductCode(), payment.getAmountMinor());
 
         return robokassaClient.buildPaymentFormHtml(
                 payment.getId(),
                 payment.getAmountMinor(),
-                product.getName()
+                itemName
         );
+    }
+
+    private String resolveItemName(Payment payment) {
+        if (payment.getPurchaseType() == PurchaseType.SUBSCRIPTION) {
+            SubscriptionPlan plan = planRepository.findById(payment.getSubscriptionPlanId())
+                    .orElseThrow(() -> new PaymentNotFoundException(payment.getId()));
+            return "Подписка «" + plan.getName() + "» на " + plan.getDurationDays() + " дней";
+        }
+        PaymentProduct product = productCatalogService.getActiveProduct(payment.getProductCode());
+        return product.getName();
     }
 }

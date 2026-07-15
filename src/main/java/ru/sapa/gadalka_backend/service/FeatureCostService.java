@@ -3,6 +3,7 @@ package ru.sapa.gadalka_backend.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.sapa.gadalka_backend.api.dto.admin.FeatureCostsDto;
+import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
 
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_CELTIC_CROSS;
@@ -13,6 +14,7 @@ import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COS
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_NUMEROLOGY_MONTH;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_NUMEROLOGY_YEAR;
 import static ru.sapa.gadalka_backend.constant.SystemConfigConstants.FEATURE_COST_THREE_CARD;
+import static ru.sapa.gadalka_backend.domain.type.DiaryFeatureType.*;
 
 /**
  * Единая точка чтения стоимости платных функций (в знаках).
@@ -97,5 +99,24 @@ public class FeatureCostService {
         systemConfigService.setValue(FEATURE_COST_NUMEROLOGY_MONTH, String.valueOf(costs.numerologyMonth()));
         systemConfigService.setValue(FEATURE_COST_NUMEROLOGY_YEAR, String.valueOf(costs.numerologyYear()));
         systemConfigService.setValue(FEATURE_COST_DREAM, String.valueOf(costs.dream()));
+    }
+
+    /**
+     * Универсальная стоимость по типу фичи — для spend-options (модалка выбора
+     * способа списания) и квотных подписок. Бесплатные фичи (карта дня, гороскоп,
+     * дневная нумерология, портрет) возвращают 0 — квоты/списания к ним не применяются.
+     */
+    public int getCost(DiaryFeatureType featureType) {
+        return switch (featureType) {
+            case THREE_CARD           -> getCost(SpreadType.THREE_CARD);
+            case HORSESHOE            -> getCost(SpreadType.HORSESHOE);
+            case CELTIC_CROSS         -> getCost(SpreadType.CELTIC_CROSS);
+            case COMPATIBILITY        -> getCompatibilityUnlockCost();
+            case DREAM                -> getDreamCost();
+            case NUMEROLOGY_WEEK      -> getNumerologyWeekCost();
+            case NUMEROLOGY_MONTH     -> getNumerologyMonthCost();
+            case NUMEROLOGY_YEAR      -> getNumerologyYearCost();
+            case DAILY_CARD, NUMEROLOGY_DAY, DAILY_HOROSCOPE, NUMEROLOGY_PORTRAIT -> 0;
+        };
     }
 }

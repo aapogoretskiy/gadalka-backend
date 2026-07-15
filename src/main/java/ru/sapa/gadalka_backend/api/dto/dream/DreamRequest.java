@@ -1,10 +1,14 @@
 package ru.sapa.gadalka_backend.api.dto.dream;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 
 import java.util.List;
 
@@ -26,4 +30,11 @@ public class DreamRequest {
 
     /** ID выбранных символов-чипов из справочника dream_symbols. */
     private List<Long> symbolIds;
+
+    /**
+     * Чем оплатить разбор: CREDITS (знаки) или QUOTA (квота подписки).
+     * По умолчанию CREDITS — обратная совместимость со старым фронтом.
+     */
+    @NotNull(message = "Способ оплаты не может быть null")
+    private SpendMode spendMode = SpendMode.CREDITS;
 }

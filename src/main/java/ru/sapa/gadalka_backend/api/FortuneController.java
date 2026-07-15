@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityRequest;
 import ru.sapa.gadalka_backend.api.dto.compatibility.CompatibilityResponse;
@@ -19,6 +20,7 @@ import ru.sapa.gadalka_backend.api.dto.fortune.FortuneRequest;
 import ru.sapa.gadalka_backend.api.dto.fortune.FortuneResponse;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DetectionSource;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.service.AiRateLimitService;
 import ru.sapa.gadalka_backend.service.CompatibilityService;
@@ -92,18 +94,18 @@ public class FortuneController extends BaseController {
         }
 
         aiRateLimitService.checkLimit(user.getId());
-        return fortuneService.getFortune(user, fortuneRequest.getQuestion(),
-                fortuneRequest.getCategory(), fortuneRequest.getSpreadType());
+        return fortuneService.getFortune(user, fortuneRequest.getQuestion(), fortuneRequest.getCategory(), fortuneRequest.getSpreadType(), fortuneRequest.getSpendMode());
     }
 
     @PostMapping("/compatibility/{id}/unlock")
     @Operation(
             summary = "Разблокировать полный анализ совместимости",
-            description = "Списывает 1 знак и возвращает полный анализ (интерпретацию и категории). " +
+            description = "Списывает знаки (или квоту подписки при spendMode=QUOTA) и возвращает полный анализ. " +
                           "Повторный вызов для уже разблокированного расклада — бесплатен.")
     public CompatibilityResponse unlockCompatibility(@PathVariable Long id,
+                                                     @RequestParam(defaultValue = "CREDITS") SpendMode spendMode,
                                                      HttpServletRequest request) {
-        return compatibilityService.unlockCompatibility(id, resolveUser(request));
+        return compatibilityService.unlockCompatibility(id, resolveUser(request), spendMode);
     }
 
     @PostMapping("/compatibility")

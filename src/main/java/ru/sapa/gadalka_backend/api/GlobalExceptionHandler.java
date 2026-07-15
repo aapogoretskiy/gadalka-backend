@@ -14,6 +14,7 @@ import ru.sapa.gadalka_backend.exception.FreeFortuneAlreadyUsedException;
 import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
 import ru.sapa.gadalka_backend.exception.LimitExceededException;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
+import ru.sapa.gadalka_backend.exception.QuotaExceededException;
 import ru.sapa.gadalka_backend.exception.RateLimitExceededException;
 import ru.sapa.gadalka_backend.exception.ProductNotFoundException;
 import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
@@ -96,6 +97,22 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInsufficientCredits(InsufficientCreditsException ex,
                                                                     HttpServletRequest request) {
         log.info("Недостаточно знаков: uri={}", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        LocalDateTime.now()));
+    }
+
+    /**
+     * Квота подписки исчерпана/недоступна. Тот же 402, что и при нехватке знаков:
+     * фронт различает случаи по тексту message и предлагает переключиться на знаки
+     * или дождаться сброса дневной квоты.
+     */
+    @ExceptionHandler(QuotaExceededException.class)
+    public ResponseEntity<ErrorResponse> handleQuotaExceeded(QuotaExceededException ex,
+                                                             HttpServletRequest request) {
+        log.info("Квота подписки недоступна: uri={}, msg={}", request.getRequestURI(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
                 .body(new ErrorResponse(HttpStatus.PAYMENT_REQUIRED.value(),
                         ex.getMessage(),

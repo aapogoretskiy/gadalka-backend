@@ -35,10 +35,11 @@ public class TelegramStarsService {
      *
      * @param internalPaymentId  наш внутренний ID платежа — передаётся как payload,
      *                           возвращается в SuccessfulPayment для связи
-     * @param product            продукт из каталога
+     * @param product            продукт из каталога (или транзиентное представление плана подписки)
+     * @param description        описание в инвойсе (видно пользователю в окне оплаты)
      * @return invoice URL для передачи в Telegram.WebApp.openInvoice()
      */
-    public String createInvoiceLink(Long internalPaymentId, PaymentProduct product) {
+    public String createInvoiceLink(Long internalPaymentId, PaymentProduct product, String description) {
         // LabeledPrice — обязательный формат ЮKassa: label + amount в Stars
         var price = new org.telegram.telegrambots.meta.api.objects.payments.LabeledPrice(
                 product.getName(),
@@ -47,7 +48,7 @@ public class TelegramStarsService {
 
         CreateInvoiceLink invoiceLink = CreateInvoiceLink.builder()
                 .title(product.getName())
-                .description("Пополнение баланса знаков в MagicLiora")
+                .description(description)
                 // Payload — наш internal payment id. Вернётся в SuccessfulPayment.
                 // Telegram не показывает его пользователю.
                 .payload(String.valueOf(internalPaymentId))

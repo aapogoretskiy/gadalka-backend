@@ -16,6 +16,7 @@ import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyYearResponse;
 import ru.sapa.gadalka_backend.domain.NumerologyYearReading;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
@@ -50,7 +51,7 @@ public class NumerologyYearService {
     private final UserProfileRepository userProfileRepository;
     private final UserRepository userRepository;
     private final DiaryService diaryService;
-    private final FortuneCreditService fortuneCreditService;
+    private final FeatureSpendService featureSpendService;
     private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
 
@@ -63,12 +64,12 @@ public class NumerologyYearService {
     );
 
     @Transactional
-    public NumerologyYearResponse getYear(Long userId) {
+    public NumerologyYearResponse getYear(Long userId, SpendMode spendMode) {
         LocalDate yearStart = LocalDate.now().withDayOfYear(1);
 
         return repository.findByUserIdAndYearStartDate(userId, yearStart)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, yearStart));
+                .orElseGet(() -> createAndSave(userId, yearStart, spendMode));
     }
 
     /**
@@ -83,7 +84,7 @@ public class NumerologyYearService {
                 .map(this::toResponse);
     }
 
-    private NumerologyYearResponse createAndSave(Long userId, LocalDate yearStart) {
+    private NumerologyYearResponse createAndSave(Long userId, LocalDate yearStart, SpendMode spendMode) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -130,7 +131,7 @@ public class NumerologyYearService {
         List<NumerologyYearKeyPeriodDto> keyPeriods = buildKeyPeriods(monthResonances);
 
         int yearCost = featureCostService.getNumerologyYearCost();
-        fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_YEAR, yearCost);
+        featureSpendService.spend(userId, DiaryFeatureType.NUMEROLOGY_YEAR, yearCost, spendMode);
 
         NumerologyYearResponse response = new NumerologyYearResponse(
                 null,

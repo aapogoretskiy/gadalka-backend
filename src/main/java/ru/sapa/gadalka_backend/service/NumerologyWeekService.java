@@ -14,6 +14,7 @@ import ru.sapa.gadalka_backend.api.dto.numerology.NumerologyWeekResponse;
 import ru.sapa.gadalka_backend.domain.NumerologyWeekReading;
 import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.repository.NumerologyWeekReadingRepository;
 import ru.sapa.gadalka_backend.repository.NumerologyYearReadingRepository;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
@@ -48,17 +49,17 @@ public class NumerologyWeekService {
     private final UserProfileRepository userProfileRepository;
     private final UserRepository userRepository;
     private final DiaryService diaryService;
-    private final FortuneCreditService fortuneCreditService;
+    private final FeatureSpendService featureSpendService;
     private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public NumerologyWeekResponse getWeek(Long userId) {
+    public NumerologyWeekResponse getWeek(Long userId, SpendMode spendMode) {
         LocalDate today = LocalDate.now();
 
         return currentWeekReading(userId, today)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, today, today.plusDays(6), !ownsYearCovering(userId, today)));
+                .orElseGet(() -> createAndSave(userId, today, today.plusDays(6), !ownsYearCovering(userId, today), spendMode));
     }
 
     /**
@@ -82,7 +83,7 @@ public class NumerologyWeekService {
             return existing;
         }
         if (ownsYearCovering(userId, today)) {
-            return Optional.of(createAndSave(userId, today, today.plusDays(6), false));
+            return Optional.of(createAndSave(userId, today, today.plusDays(6), false, SpendMode.CREDITS));
         }
         return Optional.empty();
     }
@@ -137,10 +138,11 @@ public class NumerologyWeekService {
     public NumerologyWeekResponse createIncludedWeek(Long userId, LocalDate weekStart, LocalDate weekEnd) {
         return repository.findByUserIdAndWeekStartDate(userId, weekStart)
                 .map(this::toResponse)
-                .orElseGet(() -> createAndSave(userId, weekStart, weekEnd, false));
+                .orElseGet(() -> createAndSave(userId, weekStart, weekEnd, false, SpendMode.CREDITS));
     }
 
-    private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart, LocalDate weekEnd, boolean chargeCredits) {
+    private NumerologyWeekResponse createAndSave(Long userId, LocalDate weekStart, LocalDate weekEnd,
+                                                 boolean chargeCredits, SpendMode spendMode) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -190,7 +192,7 @@ public class NumerologyWeekService {
 
         int weekCost = featureCostService.getNumerologyWeekCost();
         if (chargeCredits) {
-            fortuneCreditService.spendCredits(userId, DiaryFeatureType.NUMEROLOGY_WEEK, weekCost);
+            featureSpendService.spend(userId, DiaryFeatureType.NUMEROLOGY_WEEK, weekCost, spendMode);
         }
 
         NumerologyWeekResponse response = new NumerologyWeekResponse(

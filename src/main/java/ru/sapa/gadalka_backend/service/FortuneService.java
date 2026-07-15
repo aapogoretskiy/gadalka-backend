@@ -17,8 +17,8 @@ import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
+import ru.sapa.gadalka_backend.domain.type.SpendMode;
 import ru.sapa.gadalka_backend.domain.type.SpreadType;
-import ru.sapa.gadalka_backend.exception.InsufficientCreditsException;
 import ru.sapa.gadalka_backend.exception.SensitiveContentBlockedException;
 import ru.sapa.gadalka_backend.mapper.CardMapper;
 import ru.sapa.gadalka_backend.repository.CardRepository;
@@ -50,7 +50,7 @@ public class FortuneService {
     private final SystemConfigService systemConfigService;
     private final AiInterpretationManager interpretationManager;
     private final DiaryService diaryService;
-    private final FortuneCreditService fortuneCreditService;
+    private final FeatureSpendService featureSpendService;
     private final FeatureCostService featureCostService;
     private final ObjectMapper objectMapper;
     private final ThemeService themeService;
@@ -60,7 +60,7 @@ public class FortuneService {
     private final Executor aiTaskExecutor;
 
     @Transactional
-    public FortuneResponse getFortune(User user, String question, String category, SpreadType spreadType) {
+    public FortuneResponse getFortune(User user, String question, String category, SpreadType spreadType, SpendMode spendMode) {
         String questionHash = hashQuestion(user.getId(), question, category, spreadType);
 
         // Резолвим активную тему один раз — используется и для нового гадания, и для кэша
@@ -75,13 +75,11 @@ public class FortuneService {
             return buildResponseFromCached(user.getUsername(), cached.get(), activeTheme);
         }
 
-        // Проверяем наличие кредитов ДО вызова AI — чтобы не тратить токены впустую.
+        // Проверяем наличие знаков/квоты ДО вызова AI — чтобы не тратить токены впустую.
         // Само списание происходит ПОСЛЕ: только когда AI дал валидный ответ (не отказал).
         DiaryFeatureType featureType = toFeatureType(spreadType);
         int cost = featureCostService.getCost(spreadType);
-        if (!fortuneCreditService.canUseFeature(user.getId())) {
-            throw new InsufficientCreditsException();
-        }
+        featureSpendService.assertSpendable(user.getId(), featureType, cost, spendMode);
 
         int cardCount = spreadService.getCardCount(spreadType);
         log.info("Новое гадание: userId={}, spreadType={}, категория='{}', выбираем {} карт", user.getId(), spreadType, category, cardCount);
@@ -125,8 +123,9 @@ public class FortuneService {
             throw new SensitiveContentBlockedException(sensitiveCategory);
         }
 
-        // Ответ валидный — списываем знаки. Pessimistic lock внутри защищает от race condition.
-        fortuneCreditService.spendCredits(user.getId(), featureType, cost);
+        // Ответ валидный — списываем знаки или квоту (по выбору пользователя).
+        // Pessimistic lock внутри защищает от race condition.
+        featureSpendService.spend(user.getId(), featureType, cost, spendMode);
 
         Fortune saved = saveFortune(user.getId(), questionHash, question, spreadType, result.getCards(), result.getGeneralInterpretation());
         log.info("Гадание сохранено: fortuneId={}, userId={}, spreadType={}", saved.getId(), user.getId(), spreadType);
