@@ -104,15 +104,19 @@ public class PaymentController extends BaseController {
         int balance = fortuneCreditService.getBalance(user.getId());
 
         var quotaState = subscriptionQuotaService.getQuotaState(user.getId(), feature);
+        boolean unlimited = quotaState.map(SubscriptionQuotaService.QuotaState::unlimited).orElse(false);
 
         return ResponseEntity.ok(new SpendOptionsResponse(
                 cost,
                 balance,
                 balance >= cost,
                 quotaState.isPresent(),
-                quotaState.map(SubscriptionQuotaService.QuotaState::remaining).orElse(0),
-                quotaState.map(SubscriptionQuotaService.QuotaState::total).orElse(0),
-                quotaState.map(q -> q.period().name()).orElse(null)
+                unlimited
+                        ? (quotaState.map(SubscriptionQuotaService.QuotaState::remaining).orElse(0) > 0 ? 1 : 0)
+                        : quotaState.map(SubscriptionQuotaService.QuotaState::remaining).orElse(0),
+                unlimited ? 0 : quotaState.map(SubscriptionQuotaService.QuotaState::total).orElse(0),
+                quotaState.map(q -> q.period().name()).orElse(null),
+                unlimited
         ));
     }
 

@@ -42,7 +42,11 @@ public class SubscriptionQuotaService {
     /**
      * Остаток квоты по фиче: total, remaining, периодичность. Для отображения на фронте
      */
-    public record QuotaState(DiaryFeatureType featureType, QuotaPeriod period, int total, int remaining) {
+    /**
+     * У безлимитных квот (unlimited = true) total/remaining — СКРЫТЫЙ дневной
+     * анти-абьюз лимит, наружу в публичные DTO числа не отдаются.
+     */
+    public record QuotaState(DiaryFeatureType featureType, QuotaPeriod period, int total, int remaining, boolean unlimited) {
     }
 
     /**
@@ -100,14 +104,49 @@ public class SubscriptionQuotaService {
         }
 
         if (quota.getUsedCount() >= quota.getQuotaCount()) {
-            log.info("Квота исчерпана: userId={}, feature={}, period={}, использовано {}/{}", userId, featureType, quota.getQuotaPeriod(), quota.getUsedCount(), quota.getQuotaCount());
-            throw QuotaExceededException.quotaExhausted();
+            log.info("Квота исчерпана: userId={}, feature={}, period={}, unlimited={}, использовано {}/{}", userId, featureType, quota.getQuotaPeriod(), quota.getIsUnlimited(), quota.getUsedCount(), quota.getQuotaCount());
+            // Для «безлимита» это скрытый дневной анти-абьюз лимит — другое сообщение,
+            // числа лимита пользователю не раскрываем
+            throw Boolean.TRUE.equals(quota.getIsUnlimited())
+                    ? QuotaExceededException.dailyLimitReached()
+                    : QuotaExceededException.quotaExhausted();
         }
 
         quota.setUsedCount(quota.getUsedCount() + 1);
         quotaRepository.save(quota);
 
         log.info("Списана квота подписки: userId={}, subscriptionId={}, feature={}, использовано {}/{}", userId, subscription.getId(), featureType, quota.getUsedCount(), quota.getQuotaCount());
+
+        completeIfFullyExhausted(subscription);
+    }
+
+    /**
+     * Досрочное завершение полностью исчерпанной подписки.
+     * <p>
+     * Срабатывает ТОЛЬКО если у подписки все квоты PER_PERIOD (нет ни дневных,
+     * ни безлимитных — те пополняются каждый день, закрывать их подписку нельзя)
+     * и все потрачены до нуля. Пользователю в подписке больше нечего получать —
+     * освобождаем слот «одной подписки», чтобы он мог сразу купить новую
+     * (не дожидаясь expires_at и без ручного отказа в профиле).
+     * <p>
+     * Вызывается в той же транзакции, что и списание последней квоты.
+     */
+    private void completeIfFullyExhausted(Subscription subscription) {
+        List<SubscriptionQuota> quotas = quotaRepository.findAllBySubscriptionId(subscription.getId());
+        if (quotas.isEmpty()) return;
+
+        boolean onlyPerPeriod = quotas.stream().allMatch(q ->
+                q.getQuotaPeriod() == QuotaPeriod.PER_PERIOD && !Boolean.TRUE.equals(q.getIsUnlimited()));
+        if (!onlyPerPeriod) return;
+
+        boolean allSpent = quotas.stream().allMatch(q -> q.getUsedCount() >= q.getQuotaCount());
+        if (!allSpent) return;
+
+        subscription.setStatus("EXHAUSTED");
+        subscription.setCancelledAt(OffsetDateTime.now());
+        subscriptionRepository.save(subscription);
+
+        log.info("Подписка полностью исчерпана и завершена досрочно: subscriptionId={}, userId={}, plan='{}'", subscription.getId(), subscription.getUserId(), subscription.getPlanName());
     }
 
     private QuotaState toState(SubscriptionQuota quota) {
@@ -119,6 +158,7 @@ public class SubscriptionQuotaService {
         return new QuotaState(quota.getFeatureType(),
                 quota.getQuotaPeriod(),
                 quota.getQuotaCount(),
-                Math.max(0, quota.getQuotaCount() - used));
+                Math.max(0, quota.getQuotaCount() - used),
+                Boolean.TRUE.equals(quota.getIsUnlimited()));
     }
 }

@@ -51,4 +51,8 @@ public class SubscriptionQuota {
     /** День (МСК), к которому относится usedCount у DAILY-квот. NULL для PER_PERIOD */
     @Column(name = "usage_date")
     private LocalDate usageDate;
+
+    /** Снапшот флага «безлимит» из плана (см. SubscriptionPlanQuota.isUnlimited) */
+    @Column(name = "is_unlimited", nullable = false)
+    private Boolean isUnlimited;
 }

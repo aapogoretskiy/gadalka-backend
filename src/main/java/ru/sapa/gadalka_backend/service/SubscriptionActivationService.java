@@ -82,6 +82,7 @@ public class SubscriptionActivationService {
                     .quotaPeriod(pq.getQuotaPeriod())
                     .usedCount(0)
                     .usageDate(pq.getQuotaPeriod() == QuotaPeriod.DAILY ? todayMsk : null)
+                    .isUnlimited(Boolean.TRUE.equals(pq.getIsUnlimited()))
                     .build());
         }
 

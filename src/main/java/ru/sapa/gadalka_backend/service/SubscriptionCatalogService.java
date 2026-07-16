@@ -67,7 +67,10 @@ public class SubscriptionCatalogService {
                         sub.getExpiresAt(),
                         subscriptionQuotaService.getAllQuotaStates(sub.getId()).stream()
                                 .map(q -> new MySubscriptionResponse.QuotaStateDto(
-                                        q.featureType(), q.period(), q.total(), q.remaining()))
+                                        q.featureType(), q.period(),
+                                        q.unlimited() ? 0 : q.total(),
+                                        q.unlimited() ? 0 : q.remaining(),
+                                        q.unlimited()))
                                 .toList()));
     }
 }

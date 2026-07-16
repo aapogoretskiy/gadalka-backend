@@ -9,6 +9,7 @@ import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerPreCheckoutQuery;
 import org.telegram.telegrambots.meta.api.methods.menubutton.SetChatMenuButton;
+import org.telegram.telegrambots.meta.api.methods.payments.RefundStarPayment;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
@@ -215,6 +216,30 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
             // Не критично для операции начисления — кредиты уже зачислены.
             // Пользователь может не принять сообщения от бота (заблокировал бота).
             log.warn("Не удалось отправить уведомление о подарке: telegramId={}, error={}", telegramId, e.getMessage());
+        }
+    }
+
+    /**
+     * Возврат платежа Telegram Stars через Bot API. Вызывается из
+     * {@link ru.sapa.gadalka_backend.service.SubscriptionCancellationService}
+     * при оформлении возврата админом.
+     *
+     * @param telegramId       Telegram ID пользователя-плательщика
+     * @param telegramChargeId telegram_payment_charge_id успешного платежа
+     * @return true — Telegram подтвердил возврат
+     */
+    public boolean refundStarPayment(Long telegramId, String telegramChargeId) {
+        try {
+            var refund = RefundStarPayment.builder()
+                    .userId(telegramId)
+                    .telegramPaymentChargeId(telegramChargeId)
+                    .build();
+            telegramClient.execute(refund);
+            log.info("Stars возвращены: telegramId={}, chargeId={}", telegramId, telegramChargeId);
+            return true;
+        } catch (TelegramApiException e) {
+            log.error("Не удалось вернуть Stars: telegramId={}, chargeId={}, error={}", telegramId, telegramChargeId, e.getMessage());
+            return false;
         }
     }
 

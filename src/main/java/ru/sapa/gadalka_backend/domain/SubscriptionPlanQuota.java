@@ -37,4 +37,11 @@ public class SubscriptionPlanQuota {
     @Enumerated(EnumType.STRING)
     @Column(name = "quota_period", nullable = false, length = 20)
     private QuotaPeriod quotaPeriod;
+
+    /**
+     * «Безлимит» для пользователя. Технически quota_count — скрытый дневной
+     * анти-абьюз лимит (period всегда DAILY), но UI показывает «Безлимит» без чисел.
+     */
+    @Column(name = "is_unlimited", nullable = false)
+    private Boolean isUnlimited;
 }

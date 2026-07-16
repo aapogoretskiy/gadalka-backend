@@ -71,6 +71,10 @@ public class Payment {
     @Column(name = "credits_to_grant", nullable = false)
     private Integer creditsToGrant;
 
+    /** Когда оформлен возврат денег (status = REFUNDED). NULL — возврата не было */
+    @Column(name = "refunded_at")
+    private OffsetDateTime refundedAt;
+
     /**
      * Когда пользователю отправлено напоминание о брошенной оплате
      * (см. PaymentRecoveryService). NULL — не отправлялось.

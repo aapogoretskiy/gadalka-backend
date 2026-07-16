@@ -104,6 +104,7 @@ public class SubscriptionGiftService {
                     .quotaPeriod(period)
                     .usedCount(0)
                     .usageDate(period == QuotaPeriod.DAILY ? LocalDate.now(SubscriptionQuotaService.MSK) : null)
+                    .isUnlimited(false)
                     .build();
         }
         quotaRepository.save(quota);

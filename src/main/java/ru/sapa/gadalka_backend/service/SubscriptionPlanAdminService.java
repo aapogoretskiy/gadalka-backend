@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.AdminSubscriptionPlanDto;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlanQuota;
+import ru.sapa.gadalka_backend.domain.type.QuotaPeriod;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanQuotaRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
 
@@ -114,7 +115,8 @@ public class SubscriptionPlanAdminService {
                     .planId(planId)
                     .featureType(q.featureType())
                     .quotaCount(q.quotaCount())
-                    .quotaPeriod(q.quotaPeriod())
+                    .quotaPeriod(q.unlimited() ? QuotaPeriod.DAILY : q.quotaPeriod())
+                    .isUnlimited(q.unlimited())
                     .build());
         }
     }
@@ -122,7 +124,8 @@ public class SubscriptionPlanAdminService {
     private List<AdminSubscriptionPlanDto.QuotaDto> toQuotaDtos(List<SubscriptionPlanQuota> quotas) {
         if (quotas == null) return List.of();
         return quotas.stream()
-                .map(q -> new AdminSubscriptionPlanDto.QuotaDto(q.getFeatureType(), q.getQuotaCount(), q.getQuotaPeriod()))
+                .map(q -> new AdminSubscriptionPlanDto.QuotaDto(q.getFeatureType(), q.getQuotaCount(),
+                        q.getQuotaPeriod(), Boolean.TRUE.equals(q.getIsUnlimited())))
                 .toList();
     }
 

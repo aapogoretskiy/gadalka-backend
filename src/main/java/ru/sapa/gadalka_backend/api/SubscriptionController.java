@@ -23,6 +23,7 @@ import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.service.PaymentService;
+import ru.sapa.gadalka_backend.service.SubscriptionCancellationService;
 import ru.sapa.gadalka_backend.service.SubscriptionCatalogService;
 import ru.sapa.gadalka_backend.service.SubscriptionQuotaService;
 
@@ -45,6 +46,7 @@ public class SubscriptionController extends BaseController {
 
     private final SubscriptionCatalogService subscriptionCatalogService;
     private final SubscriptionQuotaService subscriptionQuotaService;
+    private final SubscriptionCancellationService subscriptionCancellationService;
     private final PaymentService paymentService;
     private final AdminProperties adminProperties;
 
@@ -98,6 +100,24 @@ public class SubscriptionController extends BaseController {
 
         String url = paymentService.createSubscriptionPayment(user.getId(), plan, provider);
         return ResponseEntity.ok(new CreatePaymentResponse(url));
+    }
+
+    /**
+     * POST /api/v1/subscriptions/cancel
+     * Отказ от активной подписки: слот освобождается, квоты и срок сгорают.
+     * Деньги автоматически НЕ возвращаются — фронт предупреждает об этом
+     * в подтверждении, возврат оформляется через поддержку (ст. 32 ЗоЗПП).
+     */
+    @PostMapping("/cancel")
+    @Operation(summary = "Отказаться от активной подписки (без автовозврата)")
+    public ResponseEntity<?> cancelSubscription(HttpServletRequest request) {
+        User user = resolveUser(request);
+        try {
+            subscriptionCancellationService.cancelByUser(user.getId());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+        return ResponseEntity.ok().build();
     }
 
     /**

@@ -21,4 +21,9 @@ public class QuotaExceededException extends RuntimeException {
     public static QuotaExceededException quotaExhausted() {
         return new QuotaExceededException("Квота подписки на эту функцию исчерпана");
     }
+
+    /** Скрытый дневной анти-абьюз лимит безлимитной квоты (см. SubscriptionQuota.isUnlimited) */
+    public static QuotaExceededException dailyLimitReached() {
+        return new QuotaExceededException("Звезды исчерпали энергию на сегодня по данному типу гаданий — попробуйте завтра");
+    }
 }

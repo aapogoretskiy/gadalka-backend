@@ -23,10 +23,15 @@ public record AdminSubscriptionPlanDto(
         int sortOrder,
         List<QuotaDto> quotas
 ) {
+    /**
+     * @param quotaCount для безлимита (unlimited = true) — скрытый дневной
+     *                   анти-абьюз лимит (админ видит и настраивает его)
+     */
     public record QuotaDto(
             DiaryFeatureType featureType,
             int quotaCount,
-            QuotaPeriod quotaPeriod
+            QuotaPeriod quotaPeriod,
+            boolean unlimited
     ) {
     }
 

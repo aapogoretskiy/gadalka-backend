@@ -25,6 +25,8 @@ public record TransactionSummaryDto(
         String currency,
         Integer creditsToGrant,
         String providerPaymentId,
+        /* CREDITS | SUBSCRIPTION — для кнопки «Оформить возврат» в админке */
+        String purchaseType,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
@@ -43,6 +45,7 @@ public record TransactionSummaryDto(
                 p.getCurrency(),
                 p.getCreditsToGrant(),
                 p.getProviderPaymentId(),
+                p.getPurchaseType() != null ? p.getPurchaseType().name() : "CREDITS",
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );

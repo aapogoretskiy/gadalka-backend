@@ -16,12 +16,17 @@ public record MySubscriptionResponse(
         OffsetDateTime expiresAt,
         List<QuotaStateDto> quotas
 ) {
-    /** Остаток квоты: «Сонник — осталось 2 из 3 (в день)» */
+    /**
+     * Остаток квоты: «Сонник — осталось 2 из 3 (в день)».
+     * Для безлимитных (unlimited = true) total/remaining = 0 — скрытый дневной
+     * лимит не раскрывается, фронт показывает «Безлимит».
+     */
     public record QuotaStateDto(
             DiaryFeatureType featureType,
             QuotaPeriod quotaPeriod,
             int total,
-            int remaining
+            int remaining,
+            boolean unlimited
     ) {
     }
 }

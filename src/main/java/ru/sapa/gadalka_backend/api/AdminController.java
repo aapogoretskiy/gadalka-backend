@@ -63,6 +63,7 @@ import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
 import ru.sapa.gadalka_backend.service.ReferralStatsService;
 import ru.sapa.gadalka_backend.service.SensitiveContentBackfillService;
+import ru.sapa.gadalka_backend.service.SubscriptionCancellationService;
 import ru.sapa.gadalka_backend.service.SubscriptionGiftService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
 
@@ -139,6 +140,7 @@ public class AdminController {
     private final ObjectMapper objectMapper;
     private final GadalkaTelegramBot telegramBot;
     private final SubscriptionGiftService subscriptionGiftService;
+    private final SubscriptionCancellationService subscriptionCancellationService;
     private final BroadcastService broadcastService;
     private final InboxService inboxService;
     private final ReportService reportService;
@@ -739,6 +741,30 @@ public class AdminController {
                 "giftSubscriptionCreated", result.giftSubscriptionCreated(),
                 "newQuotaCount", result.newQuotaCount()
         ));
+    }
+
+    /**
+     * POST /api/admin/payments/{id}/refund
+     *
+     * <p>Оформляет возврат подписочного платежа: платёж → REFUNDED, активная
+     * подписка пользователя отменяется. Stars возвращаются автоматически через
+     * Bot API; рублёвые платежи админ возвращает вручную через ЛК Robokassa
+     * (об этом скажет message в ответе).
+     */
+    @PostMapping("/payments/{id}/refund")
+    public ResponseEntity<?> refundPayment(@PathVariable Long id, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        try {
+            SubscriptionCancellationService.RefundResult result = subscriptionCancellationService.refundSubscriptionPayment(id);
+            log.info("Admin {} оформил возврат по платежу id={}: {}", adminId, id, result);
+            return ResponseEntity.ok(Map.of(
+                    "message", result.note(),
+                    "subscriptionCancelled", result.subscriptionCancelled(),
+                    "starsRefunded", result.starsRefunded()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
     }
 
     /** Человекочитаемая метка фичи для уведомления о подаренной квоте */

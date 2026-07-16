@@ -52,9 +52,13 @@ public class Subscription {
     @Column(name = "last_reminder_days_left")
     private Integer lastReminderDaysLeft;
 
-    /** ACTIVE, EXPIRED, CANCELLED */
+    /** ACTIVE, EXPIRED, CANCELLED (отказ/возврат), EXHAUSTED (все PER_PERIOD-квоты потрачены) */
     @Column(name = "status", nullable = false, length = 50)
     private String status;
+
+    /** Момент отказа от подписки (пользователем или админом при возврате) */
+    @Column(name = "cancelled_at")
+    private OffsetDateTime cancelledAt;
 
     @Column(name = "expires_at", nullable = false)
     private OffsetDateTime expiresAt;
