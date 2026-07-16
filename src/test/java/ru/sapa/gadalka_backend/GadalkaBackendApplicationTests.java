@@ -11,7 +11,14 @@ import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
  * Проверяет, что все бины собираются, зависимости разрешаются
  * и все Flyway-миграции проходят на чистой БД (в CI — контейнер Postgres 16).
  */
-@SpringBootTest
+/*
+ * Автоконфигурация telegram-стартера исключена: она сканирует контекст на бины-боты
+ * и регистрирует их на long-polling. Наш мок GadalkaTelegramBot она тоже находит,
+ * спрашивает у него токен, получает null (мок) и падает с NPE.
+ * В тестах long-polling не нужен вообще.
+ */
+@SpringBootTest(properties =
+		"spring.autoconfigure.exclude=org.telegram.telegrambots.longpolling.starter.TelegramBotStarterConfiguration")
 class GadalkaBackendApplicationTests {
 
 	/**
