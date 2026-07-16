@@ -35,7 +35,9 @@ telegram:
     token: ${TELEGRAM_BOT_TOKEN}
     username: magicliora_bot
     app-url: https://magicliora.com/
-    enabled: true
+    # По умолчанию включён (прод не меняется). В CI выключаем через
+    # TELEGRAM_BOT_ENABLED=false, чтобы бот не ходил в Telegram API из тестов.
+    enabled: ${TELEGRAM_BOT_ENABLED:true}
 
 jwt:
   secret: ${JWT_SECRET}

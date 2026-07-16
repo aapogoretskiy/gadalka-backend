@@ -1,0 +1,64 @@
+# CI: автоматическая сборка и прогон тестов на каждый push в main и каждый PR.
+# Поднимает чистую виртуалку Ubuntu + контейнер Postgres 16 (как в проде),
+# прогоняет все Flyway-миграции и тесты
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: gadalka
+          POSTGRES_USER: gadalka
+          POSTGRES_PASSWORD: gadalka
+        ports:
+          - 5432:5432
+        # Не начинаем шаги, пока Postgres реально не готов принимать соединения
+        options: >-
+          --health-cmd "pg_isready -U gadalka"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout кода
+        uses: actions/checkout@v4
+
+      - name: Установка Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Сборка и тесты
+        # chmod нужен, т.к. репозиторий создан на Windows и у mvnw
+        # в git-индексе нет бита исполняемости (Linux-runner иначе даст Permission denied)
+        run: |
+          chmod +x mvnw
+          ./mvnw --batch-mode verify
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/gadalka
+          SPRING_DATASOURCE_USERNAME: gadalka
+          SPRING_DATASOURCE_PASSWORD: gadalka
+          # Фейковые заглушки: настоящие секреты в git не попадают никогда.
+          # JWT_SECRET достаточной длины — jjwt требует ключ >= 256 бит.
+          JWT_SECRET: ci-test-secret-key-min-256-bits-aaaaaaaaaaaaaaaaaaaa
+          TELEGRAM_BOT_TOKEN: fake-token
+          # Отключаем long-polling бота, чтобы он не ломился в Telegram API
+          TELEGRAM_BOT_ENABLED: "false"
+          OPENROUTER_API_KEY: fake
+          AITUNNEL_API_KEY: fake
+          YOOKASSA_SHOP_ID: fake
+          YOOKASSA_SECRET_KEY: fake
+          ROBOKASSA_MERCHANT_LOGIN: fake
+          ROBOKASSA_PASSWORD1: fake
+          ROBOKASSA_PASSWORD2: fake
