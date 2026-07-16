@@ -17,6 +17,7 @@ import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,7 +44,10 @@ class SensitiveContentFilterServiceTest {
         service = new SensitiveContentFilterService(
                 sensitiveQueryLogRepository, interpretationManager, systemConfigService,
                 explanationAsyncService, userSensitivityProfileService);
-        when(systemConfigService.getValue(anyString())).thenReturn("mock");
+        // lenient: стаб нужен только тестам, доходящим до LLM-вызова (classifyByLlm*);
+        // keyword- и refusal-тесты его не трогают — без lenient строгий Mockito
+        // валит их с UnnecessaryStubbingException
+        lenient().when(systemConfigService.getValue(anyString())).thenReturn("mock");
     }
 
     // ── Keyword-детекция ────────────────────────────────────────────────────

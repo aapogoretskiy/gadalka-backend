@@ -25,10 +25,12 @@ import static org.mockito.Mockito.*;
 /**
  * Тесты интеграции TelegramAuthService ↔ ReferralService.
  *
- * <p>Проверяем, что при наличии start_param в initData:
+ * <p>Проверяем:
  * <ul>
- *   <li>вызывается {@code ReferralService.recordAppOpen()} с верными аргументами</li>
- *   <li>при отсутствии start_param реферальный сервис НЕ вызывается</li>
+ *   <li>при наличии start_param вызывается {@code ReferralService.recordAppOpen()} с верными аргументами</li>
+ *   <li>без start_param для НОВОГО пользователя вызывается {@code tryRecordFromBotEntry()} —
+ *       поиск более раннего клика по реф-ссылке через бота (BOT_ENTRY)</li>
+ *   <li>без start_param для существующего пользователя рефералка не вызывается вообще</li>
  * </ul>
  *
  * <p>Авторизация отключена ({@code authEnabled=false}), чтобы тест не зависел
@@ -136,22 +138,37 @@ class TelegramAuthServiceReferralTest {
     class WithoutStartParam {
 
         @Test
-        @DisplayName("Обычный вход без реферала: recordAppOpen НЕ вызывается")
-        void noStartParam_referralServiceNotCalled() {
+        @DisplayName("Новый пользователь без start_param: recordAppOpen НЕ вызывается, "
+                + "но ищется более ранний клик по реф-ссылке через бота (BOT_ENTRY)")
+        void noStartParam_newUser_botEntryLookupCalled() {
             stubNewUser();
             String initData = "user=" + urlEncode(USER_JSON) + "&auth_date=1700000000&hash=fake";
 
             service.authenticate(initData);
 
-            verifyNoInteractions(referralService);
+            verify(referralService).tryRecordFromBotEntry(eq(TELEGRAM_ID), any(User.class));
+            verify(referralService, never()).recordAppOpen(anyLong(), any(), anyBoolean(), any());
         }
 
         @Test
-        @DisplayName("start_param пустая строка: recordAppOpen НЕ вызывается")
-        void emptyStartParam_referralServiceNotCalled() {
+        @DisplayName("start_param пустая строка: как отсутствие параметра — "
+                + "recordAppOpen НЕ вызывается, ищется BOT_ENTRY")
+        void emptyStartParam_newUser_botEntryLookupCalled() {
             stubNewUser();
             String initData = "user=" + urlEncode(USER_JSON)
                     + "&start_param=&auth_date=1700000000&hash=fake";
+
+            service.authenticate(initData);
+
+            verify(referralService).tryRecordFromBotEntry(eq(TELEGRAM_ID), any(User.class));
+            verify(referralService, never()).recordAppOpen(anyLong(), any(), anyBoolean(), any());
+        }
+
+        @Test
+        @DisplayName("Существующий пользователь без start_param: рефералка не трогается вообще")
+        void noStartParam_existingUser_referralServiceNotCalled() {
+            stubExistingUser();
+            String initData = "user=" + urlEncode(USER_JSON) + "&auth_date=1700000000&hash=fake";
 
             service.authenticate(initData);
 
