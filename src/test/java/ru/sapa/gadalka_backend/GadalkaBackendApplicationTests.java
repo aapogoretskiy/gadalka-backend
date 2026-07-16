@@ -3,6 +3,7 @@ package ru.sapa.gadalka_backend;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 
 /**
@@ -22,6 +23,14 @@ class GadalkaBackendApplicationTests {
 	 */
 	@MockitoBean
 	private GadalkaTelegramBot telegramBot;
+
+	/**
+	 * TelegramClient создаётся в TelegramBotConfiguration, которая тоже выключена
+	 * флагом telegram.bot.enabled — а NotificationSchedulerService и
+	 * TelegramStarsService требуют его безусловно. Мокаем по той же причине.
+	 */
+	@MockitoBean
+	private TelegramClient telegramClient;
 
 	@Test
 	void contextLoads() {
