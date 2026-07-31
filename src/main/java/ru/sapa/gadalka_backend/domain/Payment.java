@@ -82,6 +82,24 @@ public class Payment {
     @Column(name = "reminder_sent_at")
     private OffsetDateTime reminderSentAt;
 
+    /**
+     * Согласился ли пользователь на автопродление при оформлении этого платежа,
+     * либо это сам платёж — автоматическое рекуррентное списание.
+     * Хранится на Payment, а не только на Subscription: в момент создания платежа
+     * подписки ещё не существует (она появится после webhook), а флаг нужен уже сейчас —
+     * чтобы RobokassaClient знал, добавлять ли Recurring=true в форму оплаты.
+     */
+    @Column(name = "auto_renew_requested", nullable = false)
+    private Boolean autoRenewRequested;
+
+    /**
+     * Если этот платёж — автоматическое рекуррентное списание (создан
+     * PaymentService.renewSubscription), здесь id продлеваемой подписки.
+     * NULL — обычная (первая или ручная) покупка.
+     */
+    @Column(name = "renewal_of_subscription_id")
+    private Long renewalOfSubscriptionId;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -95,6 +113,8 @@ public class Payment {
         // Существующие места создания платежей не знают про purchaseType —
         // по умолчанию это покупка знаков (старое поведение)
         if (purchaseType == null) purchaseType = PurchaseType.CREDITS;
+        // Аналогично: старые места создания платежей не знают про автопродление
+        if (autoRenewRequested == null) autoRenewRequested = false;
     }
 
     @PreUpdate

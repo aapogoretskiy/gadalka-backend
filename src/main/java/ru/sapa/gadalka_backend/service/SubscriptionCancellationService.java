@@ -7,11 +7,14 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.Subscription;
+import ru.sapa.gadalka_backend.domain.SubscriptionAutorenewConsentLog;
 import ru.sapa.gadalka_backend.domain.User;
+import ru.sapa.gadalka_backend.domain.type.ConsentAction;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionAutorenewConsentLogRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
@@ -41,6 +44,7 @@ public class SubscriptionCancellationService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final GadalkaTelegramBot telegramBot;
+    private final SubscriptionAutorenewConsentLogRepository consentLogRepository;
 
     /**
      * Отказ от активной подписки самим пользователем.
@@ -57,6 +61,38 @@ public class SubscriptionCancellationService {
         markCancelled(subscription);
         log.info("Пользователь отказался от подписки: userId={}, subscriptionId={}, plan='{}'",
                 userId, subscription.getId(), subscription.getPlanName());
+        return subscription;
+    }
+
+    /**
+     * Отключает автопродление активной подписки. В отличие от {@link #cancelByUser} —
+     * НЕ отменяет саму подписку и не трогает уже оплаченный период: пользователь
+     * продолжает пользоваться подпиской до её естественного истечения, просто
+     * следующего автосписания не будет.
+     * <p>
+     * Это прямая реализация обязательного по 376-ФЗ (ст. 16.1 ЗоЗПП) права в любой
+     * момент отозвать согласие на использование ранее сохранённых платёжных реквизитов —
+     * пишем это в {@link SubscriptionAutorenewConsentLog} как REVOKED.
+     *
+     * @throws IllegalStateException если активной подписки с включённым автопродлением нет
+     */
+    @Transactional
+    public Subscription disableAutoRenew(Long userId) {
+        Subscription subscription = subscriptionRepository
+                .findActiveByUserId(userId, OffsetDateTime.now())
+                .filter(s -> Boolean.TRUE.equals(s.getAutoRenewEnabled()))
+                .orElseThrow(() -> new IllegalStateException("Активной подписки с автопродлением нет"));
+
+        subscription.setAutoRenewEnabled(false);
+        subscriptionRepository.save(subscription);
+
+        consentLogRepository.save(SubscriptionAutorenewConsentLog.builder()
+                .userId(userId)
+                .subscriptionId(subscription.getId())
+                .action(ConsentAction.REVOKED)
+                .build());
+
+        log.info("Пользователь отключил автопродление: userId={}, subscriptionId={}", userId, subscription.getId());
         return subscription;
     }
 

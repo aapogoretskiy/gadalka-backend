@@ -14,6 +14,7 @@ public record MySubscriptionResponse(
         String planName,
         OffsetDateTime startedAt,
         OffsetDateTime expiresAt,
+        boolean autoRenewEnabled,
         List<QuotaStateDto> quotas
 ) {
     /**

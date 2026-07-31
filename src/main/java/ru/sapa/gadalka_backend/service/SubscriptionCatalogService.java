@@ -65,6 +65,7 @@ public class SubscriptionCatalogService {
                         sub.getPlanName() != null ? sub.getPlanName() : sub.getPlan(),
                         sub.getStartedAt(),
                         sub.getExpiresAt(),
+                        Boolean.TRUE.equals(sub.getAutoRenewEnabled()),
                         subscriptionQuotaService.getAllQuotaStates(sub.getId()).stream()
                                 .map(q -> new MySubscriptionResponse.QuotaStateDto(
                                         q.featureType(), q.period(),

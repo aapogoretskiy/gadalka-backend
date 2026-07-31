@@ -51,7 +51,8 @@ public class RobokassaPageService {
         return robokassaClient.buildPaymentFormHtml(
                 payment.getId(),
                 payment.getAmountMinor(),
-                itemName
+                itemName,
+                Boolean.TRUE.equals(payment.getAutoRenewRequested())
         );
     }
 

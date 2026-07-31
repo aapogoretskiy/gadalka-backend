@@ -363,6 +363,83 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
+     * Обязательное по 376-ФЗ (ст. 16.1 ЗоЗПП) уведомление за сутки до автосписания
+     * за продление подписки. Кнопка ведёт в приложение, где можно отключить автопродление.
+     * Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionRenewalScheduler}.
+     * <p>
+     * TODO: как только на фронте появится отдельный экран управления автопродлением —
+     * поменять "screen=pay" на его роут. Пока переиспользуем существующий экран оплаты,
+     * чтобы не блокировать бэкенд на ещё не готовом фронтенде.
+     *
+     * @return true — отправлено; false — Telegram отклонил (например, бот заблокирован)
+     */
+    public boolean sendAutoRenewNotice(Long telegramId, String text) {
+        String payUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=pay";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("⚙️ Управление подпиской")
+                .webApp(new WebAppInfo(payUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление об автосписании отправлено: telegramId={}", telegramId);
+            return true;
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось отправить уведомление об автосписании: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Сообщает пользователю, что автопродление не удалось (Robokassa отклонила списание
+     * сразу — например, отвязана карта) и подписка не продлена автоматически.
+     * Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionRenewalScheduler}.
+     */
+    public void sendAutoRenewFailedNotice(Long telegramId, String planName) {
+        String payUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=pay";
+        String name = planName != null ? planName : "подписка";
+
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("💳 Оплатить вручную")
+                .webApp(new WebAppInfo(payUrl))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(String.format(
+                        "⚠️ Не удалось автоматически продлить подписку *«%s»* — списание отклонено.\n\n" +
+                        "Оплатите вручную, чтобы не потерять доступ.", name))
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление о неудачном автосписании отправлено: telegramId={}", telegramId);
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось отправить уведомление о неудачном автосписании: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+        }
+    }
+
+    /**
      * Отправляет рефереру уведомление о том, что его друг зарегистрировался.
      * Вызывается из {@link ru.sapa.gadalka_backend.service.ReferralService}.
      *

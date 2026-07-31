@@ -5,13 +5,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.PaymentProduct;
+import ru.sapa.gadalka_backend.domain.Subscription;
+import ru.sapa.gadalka_backend.domain.SubscriptionAutorenewConsentLog;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
+import ru.sapa.gadalka_backend.domain.type.ConsentAction;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.exception.PaymentNotFoundException;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionAutorenewConsentLogRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
+import ru.sapa.gadalka_backend.service.robokassa.RobokassaClient;
 import ru.sapa.gadalka_backend.service.robokassa.RobokassaWebhookParser;
 import ru.sapa.gadalka_backend.service.yookassa.YooKassaWebhookParser;
 import ru.sapa.gadalka_backend.service.yookassa.dto.YooKassaWebhookPayload;
@@ -34,10 +40,13 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final ProductCatalogService productCatalogService;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final FortuneCreditService fortuneCreditService;
     private final SubscriptionActivationService subscriptionActivationService;
     private final YooKassaWebhookParser yooKassaWebhookParser;
     private final RobokassaWebhookParser robokassaWebhookParser;
+    private final RobokassaClient robokassaClient;
+    private final SubscriptionAutorenewConsentLogRepository consentLogRepository;
 
     /**
      * Registry стратегий: PaymentProvider → реализация.
@@ -48,18 +57,24 @@ public class PaymentService {
     public PaymentService(
             PaymentRepository paymentRepository,
             ProductCatalogService productCatalogService,
+            SubscriptionPlanRepository subscriptionPlanRepository,
             FortuneCreditService fortuneCreditService,
             SubscriptionActivationService subscriptionActivationService,
             YooKassaWebhookParser yooKassaWebhookParser,
             RobokassaWebhookParser robokassaWebhookParser,
+            RobokassaClient robokassaClient,
+            SubscriptionAutorenewConsentLogRepository consentLogRepository,
             List<PaymentProviderStrategy> strategies) {
 
         this.paymentRepository = paymentRepository;
         this.productCatalogService = productCatalogService;
+        this.subscriptionPlanRepository = subscriptionPlanRepository;
         this.fortuneCreditService = fortuneCreditService;
         this.subscriptionActivationService = subscriptionActivationService;
         this.yooKassaWebhookParser = yooKassaWebhookParser;
         this.robokassaWebhookParser = robokassaWebhookParser;
+        this.robokassaClient = robokassaClient;
+        this.consentLogRepository = consentLogRepository;
 
         // Собираем registry: каждая стратегия сама заявляет свой provider()
         this.strategyRegistry = strategies.stream()
@@ -114,11 +129,22 @@ public class PaymentService {
      * План оборачивается в транзиентный (не сохраняемый) PaymentProduct,
      * чтобы переиспользовать существующие стратегии провайдеров без изменений:
      * им от продукта нужны только цены и название (для чека/инвойса).
+     *
+     * @param autoRenewConsent явное согласие пользователя на автопродление (отдельный
+     *                         чекбокс, см. CreateSubscriptionPaymentRequest). Пробрасывается
+     *                         в Payment.autoRenewRequested — на его основе RobokassaStrategy
+     *                         решает, добавлять ли Recurring=true в форму оплаты.
      */
     @Transactional
-    public String createSubscriptionPayment(Long userId, SubscriptionPlan plan, PaymentProvider provider) {
+    public String createSubscriptionPayment(Long userId, SubscriptionPlan plan, PaymentProvider provider, boolean autoRenewConsent) {
         PaymentProviderStrategy strategy = getStrategy(provider);
         PaymentProduct planAsProduct = toTransientProduct(plan);
+
+        // Автопродление сейчас реализовано только для Robokassa (chargeRecurring). Для
+        // остальных провайдеров согласие игнорируем на бэке — а не полагаемся на то, что
+        // фронт не пришлёт его по ошибке: иначе получится подписка с autoRenewEnabled=true,
+        // которую нечем будет продлевать (PaymentService#renewSubscription жёстко на Robokassa).
+        boolean effectiveAutoRenew = autoRenewConsent && provider == PaymentProvider.ROBOKASSA;
 
         Payment payment = Payment.builder()
                 .userId(userId)
@@ -130,15 +156,103 @@ public class PaymentService {
                 .amountMinor(strategy.getAmountMinor(planAsProduct))
                 .currency(strategy.getCurrency())
                 .creditsToGrant(0)
+                .autoRenewRequested(effectiveAutoRenew)
                 .build();
         payment = paymentRepository.save(payment);
 
         String url = strategy.initiatePayment(payment, planAsProduct);
         paymentRepository.save(payment);
 
-        log.info("Подписочный платёж инициирован: internalId={}, provider={}, userId={}, planId={}", payment.getId(), provider, userId, plan.getId());
+        // Подписки на момент клика по чекбоксу ещё не существует (появится только
+        // после webhook, см. SubscriptionActivationService) — поэтому журналируем
+        // согласие по payment_id, subscription_id заполнится отдельно, когда подписка
+        // будет создана (см. SubscriptionActivationService#activateFromPayment).
+        if (effectiveAutoRenew) {
+            consentLogRepository.save(SubscriptionAutorenewConsentLog.builder()
+                    .userId(userId)
+                    .paymentId(payment.getId())
+                    .action(ConsentAction.GRANTED)
+                    .build());
+        }
+
+        log.info("Подписочный платёж инициирован: internalId={}, provider={}, userId={}, planId={}, autoRenew={}",
+                payment.getId(), provider, userId, plan.getId(), effectiveAutoRenew);
 
         return url;
+    }
+
+    /**
+     * Инициирует автоматическое рекуррентное списание за продление подписки
+     * (вызывается из SubscriptionRenewalScheduler, не из контроллера — пользователь в этом действии не участвует).
+     * <p>
+     * Создаёт новый Payment для расчётного периода и списывает деньги через
+     * {@code RobokassaClient.chargeRecurring}, используя root_payment_id продлеваемой
+     * подписки как PreviousInvoiceID. Реальное подтверждение приходит как обычно
+     * через ResultURL — {@link #processRobokassaWebhook} и {@link #completePayment}
+     * переиспользуются без изменений.
+     * <p>
+     * Если Robokassa отклонила запрос сразу (невалидная подпись, магазин не подключён к recurring и т.п.) — платёж сразу помечается FAILED, дальше ждать нечего: webhook по такому запросу не придёт.
+     *
+     * @return true, если Robokassa приняла запрос на списание (это ещё не значит, что деньги списаны — это подтвердит только webhook)
+     */
+    @Transactional
+    public boolean renewSubscription(Subscription subscription) {
+        if (subscription.getRootPaymentId() == null) {
+            // списывать с PreviousInvoiceID=null нельзя ни в коем случае — только лог и отказ.
+            log.error("Автопродление невозможно: у подписки нет rootPaymentId: subscriptionId={}, userId={}", subscription.getId(), subscription.getUserId());
+            return false;
+        }
+
+        SubscriptionPlan plan = subscriptionPlanRepository.findById(subscription.getPlanId())
+                .orElseThrow(() -> new IllegalStateException("План подписки не найден при автопродлении: planId=" + subscription.getPlanId() + ", subscriptionId=" + subscription.getId()));
+        // Плана может не быть в публичном каталоге (админ мог его деактивировать),
+        // но уже существующим подписчикам продление всё равно должно работать —
+        // поэтому ищем по id напрямую, а не через "только активные" методы каталога.
+        String itemName = toTransientProduct(plan).getName();
+
+        // Списываем по цене, зафиксированной при оформлении согласия (п. 6.11.3(1) соглашения),
+        // а НЕ по текущей цене плана — админ мог поднять или снизить цену уже после того,
+        // как пользователь подписался на автопродление. lockedPriceRub может быть null только
+        // у подписок, созданных до введения этого поля (V58) — тогда откатываемся на цену
+        // плана и громко логируем, чтобы это не осталось незамеченным.
+        Integer chargeAmount = subscription.getLockedPriceRub();
+        if (chargeAmount == null) {
+            chargeAmount = plan.getPriceRub();
+            log.warn("У подписки нет lockedPriceRub — списываем по текущей цене плана: subscriptionId={}, planId={}, priceRub={}",
+                    subscription.getId(), plan.getId(), chargeAmount);
+        }
+
+        Payment payment = Payment.builder()
+                .userId(subscription.getUserId())
+                .productCode("PLAN_" + plan.getId())
+                .purchaseType(PurchaseType.SUBSCRIPTION)
+                .subscriptionPlanId(plan.getId())
+                .provider(PaymentProvider.ROBOKASSA)
+                .status(PaymentStatus.PENDING)
+                .amountMinor(chargeAmount)
+                .currency("RUB")
+                .creditsToGrant(0)
+                .autoRenewRequested(true)
+                .renewalOfSubscriptionId(subscription.getId())
+                .build();
+        payment = paymentRepository.save(payment);
+
+        boolean accepted = robokassaClient.chargeRecurring(
+                payment.getId(),
+                subscription.getRootPaymentId(),
+                payment.getAmountMinor(),
+                itemName
+        );
+
+        if (!accepted) {
+            payment.setStatus(PaymentStatus.FAILED);
+            paymentRepository.save(payment);
+            log.warn("Автопродление отклонено Robokassa сразу: subscriptionId={}, paymentId={}, userId={}", subscription.getId(), payment.getId(), subscription.getUserId());
+        } else {
+            log.info("Автопродление инициировано: subscriptionId={}, paymentId={}, userId={}, planId={}", subscription.getId(), payment.getId(), subscription.getUserId(), plan.getId());
+        }
+
+        return accepted;
     }
 
     /**

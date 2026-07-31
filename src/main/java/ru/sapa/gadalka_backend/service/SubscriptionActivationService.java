@@ -58,17 +58,37 @@ public class SubscriptionActivationService {
                         "Активация подписки при уже существующей активной: userId={}, existingSubId={}, paymentId={}",
                         payment.getUserId(), existing.getId(), payment.getId()));
 
+        // Если это автопродление — подтягиваем продлеваемую подписку один раз и переиспользуем
+        // и для расчёта периода, и для наследования autoRenewEnabled/rootPaymentId/lockedPriceRub.
+        Subscription previousSubscription = null;
+        if (payment.getRenewalOfSubscriptionId() != null) {
+            previousSubscription = subscriptionRepository.findById(payment.getRenewalOfSubscriptionId())
+                    .orElse(null);
+            if (previousSubscription == null) {
+                log.warn("Не найдена продлеваемая подписка при активации автосписания: renewalOfSubscriptionId={}, paymentId={}",
+                        payment.getRenewalOfSubscriptionId(), payment.getId());
+            }
+        }
+
         OffsetDateTime now = OffsetDateTime.now();
-        Subscription subscription = Subscription.builder()
+        // При автопродлении новый расчётный период считается от expiresAt СТАРОЙ подписки,
+        // а не от момента списания (п. 6.12.3 соглашения) — иначе списание чуть раньше или
+        // позже строгого расписания сдвигало бы весь график подписки пользователя.
+        OffsetDateTime periodStart = previousSubscription != null ? previousSubscription.getExpiresAt() : now;
+        OffsetDateTime periodEnd = periodStart.plusDays(plan.getDurationDays());
+
+        Subscription.SubscriptionBuilder builder = Subscription.builder()
                 .userId(payment.getUserId())
                 .plan("PLAN_" + plan.getId())
                 .planId(plan.getId())
                 .planName(plan.getName())
                 .status("ACTIVE")
-                .startedAt(now)
-                .expiresAt(now.plusDays(plan.getDurationDays()))
-                .provider(payment.getProvider())
-                .build();
+                .startedAt(periodStart)
+                .expiresAt(periodEnd)
+                .provider(payment.getProvider());
+        applyAutoRenewState(builder, payment, previousSubscription);
+
+        Subscription subscription = builder.build();
         subscription = subscriptionRepository.save(subscription);
 
         // Снапшот квот плана → квоты подписки
@@ -86,8 +106,40 @@ public class SubscriptionActivationService {
                     .build());
         }
 
-        log.info("Подписка активирована: subscriptionId={}, userId={}, plan='{}' (planId={}), до {}, квот: {}",
+        log.info("Подписка активирована: subscriptionId={}, userId={}, plan='{}' (planId={}), до {}, квот: {}, autoRenew={}",
                 subscription.getId(), payment.getUserId(), plan.getName(), plan.getId(),
-                subscription.getExpiresAt(), planQuotas.size());
+                subscription.getExpiresAt(), planQuotas.size(), subscription.getAutoRenewEnabled());
+    }
+
+    /**
+     * Переносит состояние автопродления в новую подписку.
+     * <p>
+     * Если платёж — автоматическое рекуррентное продление ({@code renewalOfSubscriptionId}
+     * заполнен, см. {@code PaymentService#renewSubscription}), наследуем autoRenewEnabled,
+     * rootPaymentId и lockedPriceRub у продлеваемой подписки — цепочка PreviousInvoiceID у
+     * Robokassa должна продолжать указывать на один и тот же материнский платёж, а зафиксированная
+     * цена (п. 6.11.3(1) соглашения) не должна молча съезжать на текущую цену плана.
+     * <p>
+     * Иначе (первая или ручная покупка) — состояние берём из самого платежа: если
+     * пользователь дал согласие на автопродление (отдельный чекбокс), этот платёж
+     * сам становится корнем будущей цепочки, а его сумма — зафиксированной ценой.
+     *
+     * @param previousSubscription продлеваемая подписка, уже загруженная вызывающим методом
+     *                              (или null — при первой/ручной покупке либо если её не нашли)
+     */
+    private void applyAutoRenewState(Subscription.SubscriptionBuilder builder, Payment payment, Subscription previousSubscription) {
+        if (payment.getRenewalOfSubscriptionId() != null) {
+            if (previousSubscription != null) {
+                builder.autoRenewEnabled(previousSubscription.getAutoRenewEnabled());
+                builder.rootPaymentId(previousSubscription.getRootPaymentId());
+                builder.lockedPriceRub(previousSubscription.getLockedPriceRub());
+            }
+            return;
+        }
+
+        boolean autoRenew = Boolean.TRUE.equals(payment.getAutoRenewRequested());
+        builder.autoRenewEnabled(autoRenew);
+        builder.rootPaymentId(autoRenew ? payment.getId() : null);
+        builder.lockedPriceRub(autoRenew ? payment.getAmountMinor() : null);
     }
 }

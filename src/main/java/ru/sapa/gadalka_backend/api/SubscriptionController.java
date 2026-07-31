@@ -98,7 +98,7 @@ public class SubscriptionController extends BaseController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "У вас уже есть активная подписка. Новую можно оформить после её окончания.");
         }
 
-        String url = paymentService.createSubscriptionPayment(user.getId(), plan, provider);
+        String url = paymentService.createSubscriptionPayment(user.getId(), plan, provider, body.autoRenewConsent());
         return ResponseEntity.ok(new CreatePaymentResponse(url));
     }
 
@@ -114,6 +114,25 @@ public class SubscriptionController extends BaseController {
         User user = resolveUser(request);
         try {
             subscriptionCancellationService.cancelByUser(user.getId());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * POST /api/v1/subscriptions/auto-renew/disable
+     * Отключает автопродление активной подписки. В отличие от /cancel — НЕ сжигает
+     * оставшийся оплаченный период, только останавливает будущие автосписания.
+     * Обязательная по 376-ФЗ возможность в любой момент отозвать согласие
+     * на использование сохранённых платёжных реквизитов.
+     */
+    @PostMapping("/auto-renew/disable")
+    @Operation(summary = "Отключить автопродление (без потери текущего периода)")
+    public ResponseEntity<?> disableAutoRenew(HttpServletRequest request) {
+        User user = resolveUser(request);
+        try {
+            subscriptionCancellationService.disableAutoRenew(user.getId());
         } catch (IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
