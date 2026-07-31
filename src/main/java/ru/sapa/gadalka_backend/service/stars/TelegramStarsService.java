@@ -46,8 +46,19 @@ public class TelegramStarsService {
                 product.getPriceStars()
         );
 
+        // Telegram Bot API (createInvoiceLink) жёстко валидирует title: 1-32 символа,
+        // иначе бросает исключение ещё ДО отправки запроса. product.getName() для подписок
+        // формируется как "Подписка «Название» на N дней" — при длинном названии плана
+        // легко вылезти за 32 символа (ошибка сваливалась в общую "Unable to execute..."
+        // без внятной причины, т.к. это клиентская валидация библиотеки, а не ответ Telegram).
+        // Обрезаем защитно — на label (в price выше) это ограничение не распространяется,
+        // там остаётся полное название.
+        String title = product.getName().length() > 32
+                ? product.getName().substring(0, 29) + "..."
+                : product.getName();
+
         CreateInvoiceLink invoiceLink = CreateInvoiceLink.builder()
-                .title(product.getName())
+                .title(title)
                 .description(description)
                 // Payload — наш internal payment id. Вернётся в SuccessfulPayment.
                 // Telegram не показывает его пользователю.
@@ -63,8 +74,15 @@ public class TelegramStarsService {
                     internalPaymentId, product.getPriceStars());
             return link;
         } catch (TelegramApiException e) {
-            log.error("Ошибка создания Stars-инвойса: internalPaymentId={}, error={}",
-                    internalPaymentId, e.getMessage(), e);
+            // e.getMessage() у этой библиотеки часто это просто "Unable to execute X method" —
+            // обёртка без сути. Настоящая причина (если она вообще была передана библиотекой)
+            // лежит в e.getCause() — логируем её отдельно, иначе диагностировать новые
+            // Stars-ошибки придётся вслепую.
+            Throwable cause = e.getCause();
+            log.error("Ошибка создания Stars-инвойса: internalPaymentId={}, error={}, cause={}",
+                    internalPaymentId, e.getMessage(),
+                    cause != null ? cause.getClass().getSimpleName() + ": " + cause.getMessage() : "null",
+                    e);
             throw new IllegalStateException("Ошибка создания инвойса Telegram Stars", e);
         }
     }
