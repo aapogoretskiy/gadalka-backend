@@ -7,9 +7,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
-import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.service.SensitiveContentFilterService;
 import ru.sapa.gadalka_backend.service.SensitiveExplanationAsyncService;
+import ru.sapa.gadalka_backend.service.SensitiveQueryLogWriter;
 import ru.sapa.gadalka_backend.service.SystemConfigService;
 import ru.sapa.gadalka_backend.service.UserSensitivityProfileService;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SensitiveContentFilterServiceTest {
 
-    @Mock private SensitiveQueryLogRepository sensitiveQueryLogRepository;
+    @Mock private SensitiveQueryLogWriter sensitiveQueryLogWriter;
     @Mock private AiInterpretationManager interpretationManager;
     @Mock private SystemConfigService systemConfigService;
     @Mock private SensitiveExplanationAsyncService explanationAsyncService;
@@ -42,7 +42,7 @@ class SensitiveContentFilterServiceTest {
     @BeforeEach
     void setUp() {
         service = new SensitiveContentFilterService(
-                sensitiveQueryLogRepository, interpretationManager, systemConfigService,
+                sensitiveQueryLogWriter, interpretationManager, systemConfigService,
                 explanationAsyncService, userSensitivityProfileService);
         // lenient: стаб нужен только тестам, доходящим до LLM-вызова (classifyByLlm*);
         // keyword- и refusal-тесты его не трогают — без lenient строгий Mockito

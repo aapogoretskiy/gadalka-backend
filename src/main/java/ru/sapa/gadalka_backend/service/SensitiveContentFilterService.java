@@ -3,12 +3,9 @@ package ru.sapa.gadalka_backend.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.domain.SensitiveQueryLog;
 import ru.sapa.gadalka_backend.domain.type.DetectionSource;
 import ru.sapa.gadalka_backend.domain.type.SensitiveContentCategory;
-import ru.sapa.gadalka_backend.repository.SensitiveQueryLogRepository;
 import ru.sapa.gadalka_backend.service.interpretation.AiInterpretationManager;
 
 import java.util.HashSet;
@@ -59,7 +56,7 @@ public class SensitiveContentFilterService {
         return labels;
     }
 
-    private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
+    private final SensitiveQueryLogWriter sensitiveQueryLogWriter;
     private final AiInterpretationManager interpretationManager;
     private final SystemConfigService systemConfigService;
     private final SensitiveExplanationAsyncService explanationAsyncService;
@@ -314,24 +311,18 @@ public class SensitiveContentFilterService {
 
     /**
      * Логирует чувствительный запрос в БД.
-     * Выполняется в <b>отдельной транзакции</b> — запись фиксируется независимо
-     * от того, откатится ли внешняя транзакция (например, при броске исключения).
+     * Сохранение делегировано отдельному бину {@link SensitiveQueryLogWriter} — там оно
+     * выполняется в <b>отдельной транзакции</b> (REQUIRES_NEW), которая фиксируется
+     * независимо от того, откатится ли внешняя транзакция (например, при броске
+     * исключения сразу после вызова этого метода). Делегирование именно во внешний бин,
+     * а не self-invocation метода этого же класса — важно: иначе REQUIRES_NEW тихо
+     * игнорируется Spring'ом (см. Javadoc {@link SensitiveQueryLogWriter}).
      *
      * @return сохранённая запись (нужен id — для асинхронного дозаполнения explanation)
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SensitiveQueryLog logSensitiveQuery(Long userId, String question, SensitiveContentCategory category,
                                                 DetectionSource source, String rawClassificationOutput, String explanation) {
-        SensitiveQueryLog saved = sensitiveQueryLogRepository.save(SensitiveQueryLog.builder()
-                .userId(userId)
-                .question(question)
-                .category(category)
-                .source(source)
-                .rawClassificationOutput(rawClassificationOutput)
-                .explanation(explanation)
-                .build());
-        log.info("Залогирован чувствительный запрос: userId={}, category={}, source={}", userId, category, source);
-        return saved;
+        return sensitiveQueryLogWriter.save(userId, question, category, source, rawClassificationOutput, explanation);
     }
 
     /** Keyword-источник: explanation уже известен детерминированно (сработавшее слово), LLM не вызываем. */
@@ -345,24 +336,15 @@ public class SensitiveContentFilterService {
     /**
      * Запись при бэкафилле — то же самое, но с явным {@code detectedAt}, выставленным
      * в дату исходного вопроса (не "сейчас"): иначе вся история в админке выглядела бы
-     * так, будто все старые вопросы обнаружены сегодня.
+     * так, будто все старые вопросы обнаружены сегодня. Тоже делегировано в
+     * {@link SensitiveQueryLogWriter} — здесь баг self-invocation не проявлялся (бэкафилл
+     * не запускается внутри внешней @Transactional-транзакции), но для единообразия
+     * и на случай будущих изменений оставляем ту же схему.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SensitiveQueryLog logBackfillEntry(Long userId, String question, SensitiveContentCategory category,
                                                DetectionSource source, String rawClassificationOutput,
                                                String explanation, java.time.OffsetDateTime detectedAt) {
-        SensitiveQueryLog saved = sensitiveQueryLogRepository.save(SensitiveQueryLog.builder()
-                .userId(userId)
-                .question(question)
-                .category(category)
-                .source(source)
-                .rawClassificationOutput(rawClassificationOutput)
-                .explanation(explanation)
-                .detectedAt(detectedAt)
-                .build());
-        log.info("Бэкафилл: залогирован исторический чувствительный запрос: userId={}, category={}, source={}",
-                userId, category, source);
-        return saved;
+        return sensitiveQueryLogWriter.saveBackfillEntry(userId, question, category, source, rawClassificationOutput, explanation, detectedAt);
     }
 
     /**
