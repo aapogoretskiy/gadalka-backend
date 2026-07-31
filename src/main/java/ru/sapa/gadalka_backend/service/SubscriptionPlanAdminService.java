@@ -5,11 +5,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.api.dto.admin.AdminSubscriptionPlanDto;
+import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
+import ru.sapa.gadalka_backend.domain.Subscription;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlanQuota;
+import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.QuotaPeriod;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanQuotaRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionRepository;
+import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +39,9 @@ public class SubscriptionPlanAdminService {
     private final SubscriptionPlanRepository planRepository;
     private final SubscriptionPlanQuotaRepository planQuotaRepository;
     private final SystemConfigService systemConfigService;
+    private final SubscriptionRepository subscriptionRepository;
+    private final UserRepository userRepository;
+    private final GadalkaTelegramBot telegramBot;
 
     /** Все планы (включая неактивные) с квотами — для таблицы в админке. */
     @Transactional(readOnly = true)
@@ -80,6 +88,8 @@ public class SubscriptionPlanAdminService {
         SubscriptionPlan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new IllegalArgumentException("План не найден: id=" + planId));
 
+        int oldPriceRub = plan.getPriceRub();
+
         plan.setName(dto.name().trim());
         plan.setPriceRub(dto.priceRub());
         plan.setPriceStars(dto.priceStars());
@@ -93,7 +103,39 @@ public class SubscriptionPlanAdminService {
 
         log.info("Обновлён план подписки: id={}, name='{}', active={}, квот={}",
                 planId, plan.getName(), plan.getIsActive(), dto.quotas().size());
+
+        // Цена уже подключённых к автопродлению подписчиков зафиксирована (locked_price_rub,
+        // см. Subscription) и новой ценой плана не затрагивается — но по п. 6.14.2 соглашения
+        // их всё равно нужно уведомить о самом факте изменения (вдруг цена упала и человек
+        // захочет переоформиться на неё вручную).
+        if (oldPriceRub != dto.priceRub()) {
+            notifyAutoRenewSubscribersOfPriceChange(plan, oldPriceRub, dto.priceRub());
+        }
+
         return AdminSubscriptionPlanDto.from(plan, dto.quotas());
+    }
+
+    /** Разовая рассылка активным auto-renew подписчикам плана о смене его цены (п. 6.14.2). */
+    private void notifyAutoRenewSubscribersOfPriceChange(SubscriptionPlan plan, int oldPriceRub, int newPriceRub) {
+        List<Subscription> subscribers = subscriptionRepository.findActiveAutoRenewByPlanId(plan.getId());
+        if (subscribers.isEmpty()) return;
+
+        int notified = 0;
+        for (Subscription subscription : subscribers) {
+            User user = userRepository.findById(subscription.getUserId()).orElse(null);
+            if (user == null || user.isBanned()) continue;
+
+            // lockedPriceRub у подписчика мог отличаться от прежней цены плана (например,
+            // он подписался ещё раньше, до предыдущего изменения цены) — уведомляем именно
+            // о его реальной зафиксированной цене, а не о том, что было в плане секунду назад.
+            int lockedPriceRub = subscription.getLockedPriceRub() != null ? subscription.getLockedPriceRub() : oldPriceRub;
+            if (telegramBot.sendPlanPriceChangedNotice(user.getTelegramId(), plan.getName(), lockedPriceRub, newPriceRub)) {
+                notified++;
+            }
+        }
+
+        log.info("Уведомление об изменении цены плана '{}': подписчиков={}, уведомлено={}",
+                plan.getName(), subscribers.size(), notified);
     }
 
     /** Курс «копеек за звезду» для автоподсказки цены в Stars. Дефолт — из миграции V65. */

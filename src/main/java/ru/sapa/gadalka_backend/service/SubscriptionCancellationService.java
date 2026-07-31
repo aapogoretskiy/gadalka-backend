@@ -70,20 +70,31 @@ public class SubscriptionCancellationService {
      * продолжает пользоваться подпиской до её естественного истечения, просто
      * следующего автосписания не будет.
      * <p>
-     * Это прямая реализация обязательного по 376-ФЗ (ст. 16.1 ЗоЗПП) права в любой
-     * момент отозвать согласие на использование ранее сохранённых платёжных реквизитов —
+     * Это прямая реализация обязательного по п. 6.15.1 соглашения права в любой момент
+     * отозвать согласие на использование ранее сохранённых платёжных реквизитов —
      * пишем это в {@link SubscriptionAutorenewConsentLog} как REVOKED.
+     * <p>
+     * Работает и для SUSPENDED (подписка с неудачным списанием, идут ретраи, см.
+     * SubscriptionRenewalScheduler) — иначе пользователь не смог бы остановить повторные
+     * попытки списания, пока не истекут все 7 дней сами по себе.
      *
-     * @throws IllegalStateException если активной подписки с включённым автопродлением нет
+     * @throws IllegalStateException если активной/приостановленной подписки с включённым автопродлением нет
      */
     @Transactional
     public Subscription disableAutoRenew(Long userId) {
         Subscription subscription = subscriptionRepository
-                .findActiveByUserId(userId, OffsetDateTime.now())
+                .findActiveOrSuspendedByUserId(userId, OffsetDateTime.now())
                 .filter(s -> Boolean.TRUE.equals(s.getAutoRenewEnabled()))
                 .orElseThrow(() -> new IllegalStateException("Активной подписки с автопродлением нет"));
 
         subscription.setAutoRenewEnabled(false);
+        // Если ретраи уже шли (SUSPENDED) — дальше пробовать нечего, раз пользователь сам
+        // отказался от автопродления: завершаем сразу, а не ждём, пока истекут все 7 дней
+        // (иначе подписка бы зависла в SUSPENDED навсегда — retryFailedRenewals её больше
+        // не подхватит, т.к. фильтрует по autoRenewEnabled = true).
+        if ("SUSPENDED".equals(subscription.getStatus())) {
+            subscription.setStatus("EXPIRED");
+        }
         subscriptionRepository.save(subscription);
 
         consentLogRepository.save(SubscriptionAutorenewConsentLog.builder()

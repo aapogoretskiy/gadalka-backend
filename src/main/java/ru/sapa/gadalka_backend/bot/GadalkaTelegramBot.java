@@ -29,6 +29,8 @@ import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.stars.TelegramStarsService;
 
 import java.io.ByteArrayInputStream;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Slf4j
@@ -363,33 +365,19 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
-     * Обязательное по 376-ФЗ (ст. 16.1 ЗоЗПП) уведомление за сутки до автосписания
-     * за продление подписки. Кнопка ведёт в приложение, где можно отключить автопродление.
+     * Обязательное по п. 6.12.4 соглашения уведомление не позднее чем за 3 календарных дня
+     * до автосписания за продление подписки. Кнопка ведёт на экран профиля — там статус
+     * подписки, отключение автопродления и отмена подписки (см. ProfileScreen.vue).
      * Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionRenewalScheduler}.
-     * <p>
-     * TODO: как только на фронте появится отдельный экран управления автопродлением —
-     * поменять "screen=pay" на его роут. Пока переиспользуем существующий экран оплаты,
-     * чтобы не блокировать бэкенд на ещё не готовом фронтенде.
      *
      * @return true — отправлено; false — Telegram отклонил (например, бот заблокирован)
      */
     public boolean sendAutoRenewNotice(Long telegramId, String text) {
-        String payUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=pay";
-
-        InlineKeyboardButton button = InlineKeyboardButton.builder()
-                .text("⚙️ Управление подпиской")
-                .webApp(new WebAppInfo(payUrl))
-                .build();
-
-        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
-                .keyboard(List.of(new InlineKeyboardRow(button)))
-                .build();
-
         SendMessage message = SendMessage.builder()
                 .chatId(telegramId)
                 .text(text)
                 .parseMode("Markdown")
-                .replyMarkup(keyboard)
+                .replyMarkup(profileKeyboard("⚙️ Открыть профиль"))
                 .build();
 
         try {
@@ -404,16 +392,52 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /**
-     * Сообщает пользователю, что автопродление не удалось (Robokassa отклонила списание
-     * сразу — например, отвязана карта) и подписка не продлена автоматически.
+     * Сообщает пользователю, что списание за продление не удалось и доступ к Лимитам подписки
+     * временно приостановлен — но автопродление не выключено, будем повторять попытку
+     * автоматически до {@code retryDeadline} включительно (п. 6.13.1-6.13.2 соглашения).
+     * Отправляется один раз, при первой неудачной попытке за цикл — повторные неудачи
+     * в течение окна ретраев молча логируются, не спамим пользователя каждый день.
      * Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionRenewalScheduler}.
      */
-    public void sendAutoRenewFailedNotice(Long telegramId, String planName) {
+    public void sendAutoRenewSuspendedNotice(Long telegramId, String planName, OffsetDateTime retryDeadline) {
+        String name = planName != null ? planName : "подписка";
+        String deadlineText = retryDeadline.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(String.format(
+                        """
+                                ⏸ Не получилось списать оплату за подписку *«%s»* — доступ к лимитам подписки временно приостановлен.
+
+                                Мы будем автоматически повторять попытку до %s. Если она пройдёт успешно — доступ восстановится сам, ничего делать не нужно.
+
+                                Проверить статус или отключить автопродление можно в разделе «Профиль».""",
+                        name, deadlineText))
+                .parseMode("Markdown")
+                .replyMarkup(profileKeyboard("⚙️ Открыть профиль"))
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление о приостановке подписки отправлено: telegramId={}", telegramId);
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось отправить уведомление о приостановке подписки: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+        }
+    }
+
+    /**
+     * Сообщает пользователю, что все попытки автосписания за отведённые 7 дней не увенчались
+     * успехом — подписка завершена, автопродление выключено (п. 6.13.4 соглашения). Долга
+     * за неоплаченный период не возникает, поэтому текст не пугает пользователя задолженностью.
+     * Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionRenewalScheduler}.
+     */
+    public void sendAutoRenewTerminatedNotice(Long telegramId, String planName) {
         String payUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=pay";
         String name = planName != null ? planName : "подписка";
 
         InlineKeyboardButton button = InlineKeyboardButton.builder()
-                .text("💳 Оплатить вручную")
+                .text("💳 Оформить подписку")
                 .webApp(new WebAppInfo(payUrl))
                 .build();
 
@@ -424,19 +448,69 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
         SendMessage message = SendMessage.builder()
                 .chatId(telegramId)
                 .text(String.format(
-                        "⚠️ Не удалось автоматически продлить подписку *«%s»* — списание отклонено.\n\n" +
-                        "Оплатите вручную, чтобы не потерять доступ.", name))
+                        "❌ Не получилось продлить подписку *«%s»* — попытки списания за 7 дней не увенчались успехом. " +
+                        "Подписка завершена, автопродление выключено.\n\n" +
+                        "Оформите подписку заново в любое время.", name))
                 .parseMode("Markdown")
                 .replyMarkup(keyboard)
                 .build();
 
         try {
             telegramClient.execute(message);
-            log.info("Уведомление о неудачном автосписании отправлено: telegramId={}", telegramId);
+            log.info("Уведомление о завершении подписки отправлено: telegramId={}", telegramId);
         } catch (TelegramApiException e) {
-            log.warn("Не удалось отправить уведомление о неудачном автосписании: telegramId={}, error={}",
+            log.warn("Не удалось отправить уведомление о завершении подписки: telegramId={}, error={}",
                     telegramId, e.getMessage());
         }
+    }
+
+    /**
+     * Сообщает активным автопродлеваемым подписчикам плана, что его цена изменилась —
+     * но их собственная цена уже зафиксирована и меняться не будет (п. 6.11.3(1), 6.14
+     * соглашения). Вызывается из {@link ru.sapa.gadalka_backend.service.SubscriptionPlanAdminService}.
+     */
+    public boolean sendPlanPriceChangedNotice(Long telegramId, String planName, int lockedPriceRubKopecks, int newPriceRubKopecks) {
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(String.format(
+                        """
+                                ℹ️ Мы обновили цену тарифа *«%s»*: теперь %s ₽ за расчётный период.
+
+                                У вас уже подключено автопродление — ваша цена зафиксирована и остаётся прежней: %s ₽. Менять ничего не нужно.
+
+                                Если захотите перейти на новую цену — оформите подписку заново в разделе «Профиль».""",
+                        planName, formatRub(newPriceRubKopecks), formatRub(lockedPriceRubKopecks)))
+                .parseMode("Markdown")
+                .replyMarkup(profileKeyboard("⚙️ Открыть профиль"))
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление об изменении цены плана отправлено: telegramId={}", telegramId);
+            return true;
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось отправить уведомление об изменении цены плана: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Кнопка, открывающая Mini App сразу на экране профиля (управление подпиской). */
+    private InlineKeyboardMarkup profileKeyboard(String buttonText) {
+        String profileUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=profile";
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text(buttonText)
+                .webApp(new WebAppInfo(profileUrl))
+                .build();
+        return InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+    }
+
+    /** Форматирует копейки в рубли для текста уведомлений («299», а не «299.0»). */
+    private String formatRub(int kopecks) {
+        double rub = kopecks / 100.0;
+        return rub == Math.floor(rub) ? String.valueOf((long) rub) : String.format("%.2f", rub);
     }
 
     /**

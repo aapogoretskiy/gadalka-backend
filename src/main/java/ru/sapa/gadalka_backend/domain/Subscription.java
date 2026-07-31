@@ -57,7 +57,13 @@ public class Subscription {
     @Column(name = "last_reminder_days_left")
     private Integer lastReminderDaysLeft;
 
-    /** ACTIVE, EXPIRED, CANCELLED (отказ/возврат), EXHAUSTED (все PER_PERIOD-квоты потрачены) */
+    /**
+     * ACTIVE, EXPIRED, CANCELLED (отказ/возврат), EXHAUSTED (все PER_PERIOD-квоты потрачены).
+     * Плюс для автопродления (см. SubscriptionRenewalScheduler): RENEWAL_PENDING (в процессе
+     * списания, ждём вебхук), SUSPENDED (списание не удалось, идут ретраи — доступ к Лимитам
+     * приостановлен, п. 6.13.2), RENEWED (успешно продлена, историческая запись — актуальная
+     * подписка теперь в новой строке).
+     */
     @Column(name = "status", nullable = false, length = 50)
     private String status;
 
@@ -105,6 +111,23 @@ public class Subscription {
      */
     @Column(name = "locked_price_rub")
     private Integer lockedPriceRub;
+
+    /**
+     * Момент ПЕРВОЙ неудачной попытки автосписания за текущий цикл. NULL — попыток
+     * ещё не было или последняя прошла успешно. От этого поля отсчитываются 7 календарных
+     * дней ретраев (п. 6.13.1 соглашения) — см. SubscriptionRenewalScheduler.
+     */
+    @Column(name = "renewal_first_failed_at")
+    private OffsetDateTime renewalFirstFailedAt;
+
+    /**
+     * Момент последней попытки списания (успешной или нет) — не только первой. Нужен,
+     * чтобы (1) не пытаться списывать чаще раза в сутки во время ретраев (п. 6.13.1) и
+     * (2) обнаружить платёж, зависший без вебхука дольше разумного времени
+     * (см. SubscriptionRenewalScheduler#reconcileStuckRenewals).
+     */
+    @Column(name = "last_renewal_attempt_at")
+    private OffsetDateTime lastRenewalAttemptAt;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;

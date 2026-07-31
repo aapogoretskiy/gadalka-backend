@@ -22,6 +22,7 @@ import ru.sapa.gadalka_backend.configuration.AdminProperties;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
+import ru.sapa.gadalka_backend.repository.SubscriptionRepository;
 import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.SubscriptionCancellationService;
 import ru.sapa.gadalka_backend.service.SubscriptionCatalogService;
@@ -49,6 +50,7 @@ public class SubscriptionController extends BaseController {
     private final SubscriptionCancellationService subscriptionCancellationService;
     private final PaymentService paymentService;
     private final AdminProperties adminProperties;
+    private final SubscriptionRepository subscriptionRepository;
 
     /**
      * GET /api/v1/subscriptions/plans
@@ -94,7 +96,10 @@ public class SubscriptionController extends BaseController {
                 .getActivePlan(body.planId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "План подписки не найден"));
 
-        if (subscriptionQuotaService.findActiveSubscription(user.getId()).isPresent()) {
+        // SUSPENDED тоже блокируем: пока идут автоматические ретраи неудачного списания
+        // (см. SubscriptionRenewalScheduler), параллельная ручная покупка рискует привести
+        // к двойному списанию, если один из ретраев внезапно пройдёт успешно.
+        if (subscriptionQuotaService.findActiveSubscription(user.getId()).isPresent() || subscriptionRepository.existsByUserIdAndStatus(user.getId(), "SUSPENDED")) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "У вас уже есть активная подписка. Новую можно оформить после её окончания.");
         }
 

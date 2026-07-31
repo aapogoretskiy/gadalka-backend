@@ -106,6 +106,11 @@ public class SubscriptionActivationService {
                     .build());
         }
 
+        if (previousSubscription != null) {
+            previousSubscription.setStatus("RENEWED");
+            subscriptionRepository.save(previousSubscription);
+        }
+
         log.info("Подписка активирована: subscriptionId={}, userId={}, plan='{}' (planId={}), до {}, квот: {}, autoRenew={}",
                 subscription.getId(), payment.getUserId(), plan.getName(), plan.getId(),
                 subscription.getExpiresAt(), planQuotas.size(), subscription.getAutoRenewEnabled());

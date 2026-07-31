@@ -72,4 +72,63 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             """)
     List<Subscription> findAutoRenewChargeCandidates(@Param("now") OffsetDateTime now,
                                                       @Param("chargeWindowEnd") OffsetDateTime chargeWindowEnd);
+
+    /**
+     * Подписки, зависшие в RENEWAL_PENDING дольше разумного времени ожидания вебхука —
+     * скорее всего, платёж уже CANCELLED (см. PendingPaymentExpiryService, таймаут 30 мин
+     * + запас на цикл самой этой задачи) или зафейлился без явного сигнала. Кандидат на
+     * {@code SubscriptionRenewalScheduler#reconcileStuckRenewals} — считаем это неудачной
+     * попыткой и переводим в SUSPENDED (или EXPIRED, если 7 дней ретраев уже вышли).
+     */
+    @Query("""
+            SELECT s FROM Subscription s
+            WHERE s.status = 'RENEWAL_PENDING'
+              AND s.lastRenewalAttemptAt <= :cutoff
+            """)
+    List<Subscription> findStuckRenewalPending(@Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * Подписки в SUSPENDED (списание не удалось хотя бы раз), у которых с последней попытки
+     * прошло не меньше суток — можно пробовать снова (п. 6.13.1: не чаще 1 раза в сутки).
+     * Проверка «не вышли ли уже 7 дней ретраев» — внутри самого шедулера, не в запросе,
+     * т.к. там же нужно решить, ретраить ещё раз или уже завершать подписку.
+     */
+    @Query("""
+            SELECT s FROM Subscription s
+            WHERE s.status = 'SUSPENDED'
+              AND s.autoRenewEnabled = true
+              AND s.lastRenewalAttemptAt <= :retryCutoff
+            """)
+    List<Subscription> findAutoRenewRetryCandidates(@Param("retryCutoff") OffsetDateTime retryCutoff);
+
+    /**
+     * Активные подписки с включённым автопродлением на конкретном плане — адресаты
+     * уведомления об изменении цены плана (п. 6.14.2), см. SubscriptionPlanAdminService.
+     */
+    @Query("""
+            SELECT s FROM Subscription s
+            WHERE s.status = 'ACTIVE'
+              AND s.autoRenewEnabled = true
+              AND s.planId = :planId
+            """)
+    List<Subscription> findActiveAutoRenewByPlanId(@Param("planId") Long planId);
+
+    /**
+     * «Видимая» подписка для блока «Моя подписка» в профиле — в отличие от
+     * {@link #findActiveByUserId}, включает и SUSPENDED (приостановленную, но ещё не
+     * завершённую автопродлением, см. п. 6.13.2 — пользователь должен видеть её статус,
+     * а не «подписки нет»). Для SUSPENDED условие по expiresAt не применяется — на момент
+     * приостановки период уже почти или полностью истёк, это ожидаемо.
+     */
+    @Query("""
+            SELECT s FROM Subscription s
+            WHERE s.userId = :userId
+              AND ((s.status = 'ACTIVE' AND s.expiresAt > :now) OR s.status = 'SUSPENDED')
+            ORDER BY s.expiresAt DESC
+            LIMIT 1
+            """)
+    Optional<Subscription> findActiveOrSuspendedByUserId(@Param("userId") Long userId,
+                                                          @Param("now") OffsetDateTime now);
+
+    boolean existsByUserIdAndStatus(Long userId, String status);
 }

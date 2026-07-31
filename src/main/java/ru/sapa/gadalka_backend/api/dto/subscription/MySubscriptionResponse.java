@@ -15,6 +15,10 @@ public record MySubscriptionResponse(
         OffsetDateTime startedAt,
         OffsetDateTime expiresAt,
         boolean autoRenewEnabled,
+        /** ACTIVE или SUSPENDED — см. Subscription#status. Лимиты (quotas) реально доступны только при ACTIVE. */
+        String status,
+        /** Только при status=SUSPENDED: дедлайн ретраев (7 дней с первой неудачи, п. 6.13.1). Иначе null. */
+        OffsetDateTime retryDeadline,
         List<QuotaStateDto> quotas
 ) {
     /**
