@@ -8,11 +8,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 import ru.sapa.gadalka_backend.domain.Payment;
+import ru.sapa.gadalka_backend.domain.PaymentProduct;
+import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
+import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.repository.PaymentProductRepository;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.time.OffsetDateTime;
@@ -68,8 +72,26 @@ public class PaymentRecoveryService {
             "✨ Вселенная подсказывает: пакет *«%s»* остался неоплаченным.\n\nЗавершите оплату — и знаки сразу появятся на балансе 🔮"
     );
 
+    /**
+     * Отдельные пулы для подписок («подписка», не «пакет»).
+     */
+    private static final List<String> SUBSCRIPTION_STARS_MESSAGES = List.of(
+            "⭐ Не хватило звёзд? Бывает 🙂\n\nПодписку *«%s»* можно оформить обычной картой — МИР, СБП, Visa. Это займёт минуту 💳",
+            "✨ Звёзды сегодня капризны — оформление подписки *«%s»* не прошло.\n\nПопробуйте картой: обычно получается с первого раза 💳",
+            "🔮 Карты видят незавершённый путь: подписка *«%s»* так и осталась неоформленной.\n\nОплата картой через СБП — быстрее и проще ✨",
+            "🌙 Звёзды не сошлись? Ничего страшного.\n\nПодписка *«%s»* ждёт вас — оформите картой, это займёт минуту 💫"
+    );
+
+    private static final List<String> SUBSCRIPTION_CARD_MESSAGES = List.of(
+            "💫 Ваша подписка *«%s»* почти была у вас — оформление не завершилось.\n\nВернуться и завершить? Это займёт минуту 💳",
+            "🌙 Что-то отвлекло вас от оформления подписки *«%s»*?\n\nПопробуйте ещё раз ✨",
+            "🔮 Оформление подписки *«%s»* не прошло.\n\nЕсли возникли сложности — попробуйте снова: МИР и СБП работают стабильно 💳",
+            "✨ Вселенная подсказывает: подписка *«%s»* осталась неоформленной.\n\nЗавершите оформление — и доступ сразу откроется 🔮"
+    );
+
     private final PaymentRepository paymentRepository;
     private final PaymentProductRepository paymentProductRepository;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final UserRepository userRepository;
     private final GadalkaTelegramBot telegramBot;
 
@@ -143,17 +165,35 @@ public class PaymentRecoveryService {
         }
     }
 
-    /** Собирает текст напоминания: случайный вариант из пула по типу провайдера. */
+    /** Собирает текст напоминания: случайный вариант из пула по типу провайдера и покупки. */
     private String buildMessage(Payment payment) {
-        String productName = paymentProductRepository.findByCode(payment.getProductCode())
-                .map(p -> p.getName())
-                .orElse(payment.getProductCode());
+        String itemName = resolveItemName(payment);
+        boolean isSubscription = payment.getPurchaseType() == PurchaseType.SUBSCRIPTION;
+        boolean isStars = payment.getProvider() == PaymentProvider.TELEGRAM_STARS;
 
-        List<String> pool = payment.getProvider() == PaymentProvider.TELEGRAM_STARS
-                ? STARS_MESSAGES
-                : CARD_MESSAGES;
+        List<String> pool = isSubscription
+                ? (isStars ? SUBSCRIPTION_STARS_MESSAGES : SUBSCRIPTION_CARD_MESSAGES)
+                : (isStars ? STARS_MESSAGES : CARD_MESSAGES);
 
         String template = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-        return String.format(template, productName);
+        return String.format(template, itemName);
+    }
+
+    /**
+     * Название пакета или подписки для подстановки в текст напоминания.
+     * <p>
+     * Для подписок productCode — это "PLAN_" + planId (см. PaymentService), а не код из
+     * payment_products, поэтому paymentProductRepository его никогда не найдёт — нужно
+     * отдельно смотреть в SubscriptionPlanRepository по subscriptionPlanId.
+     */
+    private String resolveItemName(Payment payment) {
+        if (payment.getPurchaseType() == PurchaseType.SUBSCRIPTION) {
+            return subscriptionPlanRepository.findById(payment.getSubscriptionPlanId())
+                    .map(SubscriptionPlan::getName)
+                    .orElse(payment.getProductCode());
+        }
+        return paymentProductRepository.findByCode(payment.getProductCode())
+                .map(PaymentProduct::getName)
+                .orElse(payment.getProductCode());
     }
 }
