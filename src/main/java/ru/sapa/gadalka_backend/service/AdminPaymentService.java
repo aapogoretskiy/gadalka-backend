@@ -15,12 +15,15 @@ import ru.sapa.gadalka_backend.api.dto.admin.payment.WebhookInfoDto;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.PaymentProduct;
 import ru.sapa.gadalka_backend.domain.PaymentWebhookLog;
+import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
+import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.repository.PaymentProductRepository;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
 import ru.sapa.gadalka_backend.repository.PaymentWebhookLogRepository;
+import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
 import java.time.OffsetDateTime;
@@ -45,6 +48,7 @@ public class AdminPaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PaymentProductRepository paymentProductRepository;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final PaymentWebhookLogRepository webhookLogRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -96,10 +100,30 @@ public class AdminPaymentService {
     public Optional<TransactionDetailsDto> getTransactionDetails(Long id) {
         return paymentRepository.findById(id).map(payment -> {
             User user = userRepository.findById(payment.getUserId()).orElse(null);
-            PaymentProduct product = paymentProductRepository.findByCode(payment.getProductCode()).orElse(null);
+            String productName = resolveProductName(payment);
             WebhookInfoDto webhook = findMatchingWebhook(payment);
-            return TransactionDetailsDto.of(payment, user, product, webhook);
+            return TransactionDetailsDto.of(payment, user, productName, webhook);
         });
+    }
+
+    /**
+     * Разрешает отображаемое название продукта для одной транзакции (детальная карточка).
+     * Для пакетов знаков — из {@code payment_products}, для подписок — из
+     * {@code subscription_plans} по {@code payment.subscriptionPlanId}. Если ничего не
+     * нашлось (например, план был удалён из каталога), показываем сырой {@code productCode}.
+     */
+    private String resolveProductName(Payment payment) {
+        if (payment.getPurchaseType() == PurchaseType.SUBSCRIPTION) {
+            if (payment.getSubscriptionPlanId() == null) {
+                return payment.getProductCode();
+            }
+            return subscriptionPlanRepository.findById(payment.getSubscriptionPlanId())
+                    .map(SubscriptionPlan::getName)
+                    .orElse(payment.getProductCode());
+        }
+        return paymentProductRepository.findByCode(payment.getProductCode())
+                .map(PaymentProduct::getName)
+                .orElse(payment.getProductCode());
     }
 
     /** Резолвит поисковую строку в список user.id — точный telegram_id или LIKE по username. */
@@ -120,15 +144,31 @@ public class AdminPaymentService {
         Map<Long, User> usersById = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
-        // Каталог продуктов небольшой (единицы записей) — читаем целиком и кэшируем на время запроса.
+        // Каталоги продуктов и планов небольшие (единицы записей) — читаем целиком
+        // и кэшируем на время запроса.
         Map<String, PaymentProduct> productsByCode = paymentProductRepository.findAll().stream()
                 .collect(Collectors.toMap(PaymentProduct::getCode, Function.identity(), (a, b) -> a));
+        Map<Long, SubscriptionPlan> plansById = subscriptionPlanRepository.findAll().stream()
+                .collect(Collectors.toMap(SubscriptionPlan::getId, Function.identity(), (a, b) -> a));
 
         return page.map(payment -> TransactionSummaryDto.from(
                 payment,
                 usersById.get(payment.getUserId()),
-                productsByCode.get(payment.getProductCode())
+                resolveProductName(payment, productsByCode, plansById)
         ));
+    }
+
+    /** Разрешает отображаемое название продукта, используя предзагруженные каталоги (без N+1). */
+    private String resolveProductName(
+            Payment payment, Map<String, PaymentProduct> productsByCode, Map<Long, SubscriptionPlan> plansById) {
+        if (payment.getPurchaseType() == PurchaseType.SUBSCRIPTION) {
+            SubscriptionPlan plan = payment.getSubscriptionPlanId() != null
+                    ? plansById.get(payment.getSubscriptionPlanId())
+                    : null;
+            return plan != null ? plan.getName() : payment.getProductCode();
+        }
+        PaymentProduct product = productsByCode.get(payment.getProductCode());
+        return product != null ? product.getName() : payment.getProductCode();
     }
 
     /**

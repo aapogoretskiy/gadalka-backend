@@ -1,7 +1,6 @@
 package ru.sapa.gadalka_backend.api.dto.admin.payment;
 
 import ru.sapa.gadalka_backend.domain.Payment;
-import ru.sapa.gadalka_backend.domain.PaymentProduct;
 import ru.sapa.gadalka_backend.domain.User;
 
 import java.time.OffsetDateTime;
@@ -30,7 +29,13 @@ public record TransactionSummaryDto(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
-    public static TransactionSummaryDto from(Payment p, User user, PaymentProduct product) {
+    /**
+     * @param productName отображаемое название продукта, уже разрешённое вызывающей стороной
+     *                     (из {@code payment_products} для покупок знаков или из
+     *                     {@code subscription_plans} для подписок). Если ничего не нашлось —
+     *                     вызывающая сторона должна передать {@code p.getProductCode()} как fallback.
+     */
+    public static TransactionSummaryDto from(Payment p, User user, String productName) {
         return new TransactionSummaryDto(
                 p.getId(),
                 p.getUserId(),
@@ -38,7 +43,7 @@ public record TransactionSummaryDto(
                 user != null ? user.getUsername() : null,
                 user != null ? user.getFirstName() : null,
                 p.getProductCode(),
-                product != null ? product.getName() : p.getProductCode(),
+                productName,
                 p.getProvider().name(),
                 p.getStatus().name(),
                 p.getAmountMinor(),
