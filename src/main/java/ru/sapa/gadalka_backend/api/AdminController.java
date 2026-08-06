@@ -66,6 +66,8 @@ import ru.sapa.gadalka_backend.service.SensitiveContentBackfillService;
 import ru.sapa.gadalka_backend.service.SubscriptionCancellationService;
 import ru.sapa.gadalka_backend.service.SubscriptionGiftService;
 import ru.sapa.gadalka_backend.service.SupportTicketService;
+import ru.sapa.gadalka_backend.service.SystemConfigService;
+import ru.sapa.gadalka_backend.constant.SystemConfigConstants;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -152,6 +154,7 @@ public class AdminController {
     private final UserSensitivityProfileRepository userSensitivityProfileRepository;
     private final SensitiveContentBackfillService sensitiveContentBackfillService;
     private final AdminPaymentService adminPaymentService;
+    private final SystemConfigService systemConfigService;
 
     /**
      * GET /api/admin/users?page=0&size=20&search=username_или_telegram_id
@@ -1127,6 +1130,46 @@ public class AdminController {
         featureBadgeService.updateBadges(body);
         return ResponseEntity.ok(featureBadgeService.getAllBadges());
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  ДОСТУПНОСТЬ ПОДПИСОК ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ (закрытый тест)
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * GET /api/admin/subscriptions-available
+     *
+     * <p>Текущее состояние тоггла: доступны ли подписки всем пользователям приложения,
+     * или только админам (закрытый тест). См. PaymentController.getBalance() и
+     * SubscriptionController.assertSubscriptionsAvailable.
+     */
+    @GetMapping("/subscriptions-available")
+    public ResponseEntity<SubscriptionsAvailableDto> getSubscriptionsAvailable(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} запросил состояние тоггла доступности подписок", adminId);
+        boolean available = systemConfigService.getBooleanValue(
+                SystemConfigConstants.SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS, false);
+        return ResponseEntity.ok(new SubscriptionsAvailableDto(available));
+    }
+
+    /**
+     * PUT /api/admin/subscriptions-available
+     * Body: {"available": true}
+     *
+     * <p>Включает/выключает подписки для всех пользователей. Изменения вступают в силу
+     * немедленно (без деплоя) — следующий запрос баланса вернёт новое значение
+     * subscriptionsAvailable. Админы видят подписки всегда, независимо от тоггла.
+     */
+    @PutMapping("/subscriptions-available")
+    public ResponseEntity<SubscriptionsAvailableDto> updateSubscriptionsAvailable(
+            @RequestBody SubscriptionsAvailableDto body, HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        log.info("Admin {} переключает доступность подписок для всех: {}", adminId, body.available());
+        systemConfigService.setValue(SystemConfigConstants.SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS, String.valueOf(body.available()));
+        return ResponseEntity.ok(body);
+    }
+
+    /** Тело запроса/ответа тоггла доступности подписок. */
+    record SubscriptionsAvailableDto(boolean available) {}
 
     // ══════════════════════════════════════════════════════════
     //  DREAM SYMBOLS (Сонник — символы-чипы)

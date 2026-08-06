@@ -7,6 +7,14 @@ public class SystemConfigConstants {
     /** Курс Telegram Stars: копеек за 1 звезду (подсказка цены плана подписки в админке) */
     public static final String STARS_RUB_RATE_KOPECKS = "STARS_RUB_RATE_KOPECKS";
 
+    /**
+     * Доступность покупки подписок для обычных пользователей. Пока фича в закрытом тесте:
+     * false — подписки видят и могут купить только админы (adminProperties.isAdmin), остальным
+     * вкладка "Подписки" скрыта. true — доступно всем пользователям приложения.
+     * См. PaymentController.getBalance() и SubscriptionController.assertSubscriptionsAvailable().
+     */
+    public static final String SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS = "SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS";
+
     // ── Стоимость платных функций (в знаках) ────────────────────────────────
     public static final String FEATURE_COST_THREE_CARD = "FEATURE_COST_THREE_CARD";
     public static final String FEATURE_COST_HORSESHOE = "FEATURE_COST_HORSESHOE";

@@ -19,6 +19,7 @@ import ru.sapa.gadalka_backend.api.dto.subscription.CreateSubscriptionPaymentReq
 import ru.sapa.gadalka_backend.api.dto.subscription.MySubscriptionResponse;
 import ru.sapa.gadalka_backend.api.dto.subscription.SubscriptionPlanDto;
 import ru.sapa.gadalka_backend.configuration.AdminProperties;
+import ru.sapa.gadalka_backend.constant.SystemConfigConstants;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
@@ -27,16 +28,19 @@ import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.SubscriptionCancellationService;
 import ru.sapa.gadalka_backend.service.SubscriptionCatalogService;
 import ru.sapa.gadalka_backend.service.SubscriptionQuotaService;
+import ru.sapa.gadalka_backend.service.SystemConfigService;
 
 import java.util.List;
 
 /**
  * Публичное API подписок: каталог планов, моя подписка, покупка.
  * <p>
- * ФИЧА-ГЕЙТ: пока подписки в закрытом тесте, покупка доступна только
+ * ФИЧА-ГЕЙТ: пока подписки в закрытом тесте, покупка по умолчанию доступна только
  * администраторам (whitelist ADMIN_TELEGRAM_IDS). Каталог отдаётся всем —
  * фронт показывает вкладку задизейбленной («Будет доступна позже»).
- * Когда откроемся для всех — убрать проверку в {@link #assertSubscriptionsAvailable}.
+ * Открыть для всех пользователей — тоггл SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS
+ * в system_config, переключается из админ-панели без деплоя.
+ * См. {@link #assertSubscriptionsAvailable}.
  */
 @Slf4j
 @RestController
@@ -50,6 +54,7 @@ public class SubscriptionController extends BaseController {
     private final SubscriptionCancellationService subscriptionCancellationService;
     private final PaymentService paymentService;
     private final AdminProperties adminProperties;
+    private final SystemConfigService systemConfigService;
     private final SubscriptionRepository subscriptionRepository;
 
     /**
@@ -145,12 +150,16 @@ public class SubscriptionController extends BaseController {
     }
 
     /**
-     * Фича-гейт закрытого теста: покупка подписок доступна только админам.
-     * Дублирует ограничение UI на бэке — прямой вызов API мимо интерфейса
-     * не должен позволять купить подписку до открытия фичи.
+     * Фича-гейт закрытого теста: покупка подписок доступна админам всегда, остальным —
+     * только если тоггл SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS в system_config включён
+     * (переключается из админки, без деплоя). Дублирует ограничение UI на бэке — прямой
+     * вызов API мимо интерфейса не должен позволять купить подписку до открытия фичи.
      */
     private void assertSubscriptionsAvailable(User user) {
-        if (!adminProperties.isAdmin(user.getTelegramId())) {
+        boolean available = systemConfigService.getBooleanValue(
+                SystemConfigConstants.SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS, false)
+                || adminProperties.isAdmin(user.getTelegramId());
+        if (!available) {
             log.info("Попытка купить подписку до открытия фичи: userId={}", user.getId());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Подписки будут доступны позже");
         }

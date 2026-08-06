@@ -26,6 +26,10 @@ public record TransactionSummaryDto(
         String providerPaymentId,
         /* CREDITS | SUBSCRIPTION — для кнопки «Оформить возврат» в админке */
         String purchaseType,
+        /* true — платёж списан автоматически (рекуррентное продление подписки, без
+         * действия пользователя), см. Payment.renewalOfSubscriptionId. false — обычная
+         * покупка, инициированная пользователем вручную. */
+        boolean automatic,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
@@ -51,6 +55,7 @@ public record TransactionSummaryDto(
                 p.getCreditsToGrant(),
                 p.getProviderPaymentId(),
                 p.getPurchaseType() != null ? p.getPurchaseType().name() : "CREDITS",
+                p.getRenewalOfSubscriptionId() != null,
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );

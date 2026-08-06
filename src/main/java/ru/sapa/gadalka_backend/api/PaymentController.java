@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.sapa.gadalka_backend.api.dto.payment.*;
 import ru.sapa.gadalka_backend.configuration.AdminProperties;
+import ru.sapa.gadalka_backend.constant.SystemConfigConstants;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
@@ -20,6 +21,7 @@ import ru.sapa.gadalka_backend.service.PaymentService;
 import ru.sapa.gadalka_backend.service.PaymentWebhookAckService;
 import ru.sapa.gadalka_backend.service.ProductCatalogService;
 import ru.sapa.gadalka_backend.service.SubscriptionQuotaService;
+import ru.sapa.gadalka_backend.service.SystemConfigService;
 import ru.sapa.gadalka_backend.service.robokassa.RobokassaPageService;
 
 import java.net.URI;
@@ -36,6 +38,7 @@ public class PaymentController extends BaseController {
     private final SubscriptionQuotaService subscriptionQuotaService;
     private final FeatureCostService featureCostService;
     private final AdminProperties adminProperties;
+    private final SystemConfigService systemConfigService;
     private final PaymentService paymentService;
     private final PaymentWebhookAckService webhookAckService;
     private final RobokassaPageService robokassaPageService;
@@ -86,8 +89,12 @@ public class PaymentController extends BaseController {
         User user = resolveUser(request);
         int balance = fortuneCreditService.getBalance(user.getId());
         boolean hasSubscription = subscriptionQuotaService.findActiveSubscription(user.getId()).isPresent();
-        // Фича-гейт закрытого теста подписок: см. SubscriptionController.assertSubscriptionsAvailable
-        boolean subscriptionsAvailable = adminProperties.isAdmin(user.getTelegramId());
+        // Фича-гейт закрытого теста подписок: тоггл в system_config (управляется из админки,
+        // без деплоя) + админы видят подписки всегда, независимо от тоггла — чтобы можно было
+        // тестировать до включения на всех. См. SubscriptionController.assertSubscriptionsAvailable
+        boolean subscriptionsAvailable = systemConfigService.getBooleanValue(
+                SystemConfigConstants.SUBSCRIPTIONS_AVAILABLE_FOR_ALL_USERS, false)
+                || adminProperties.isAdmin(user.getTelegramId());
         return ResponseEntity.ok(new BalanceResponse(balance, hasSubscription, subscriptionsAvailable));
     }
 
