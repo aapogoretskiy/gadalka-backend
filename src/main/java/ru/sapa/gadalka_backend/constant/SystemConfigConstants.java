@@ -34,6 +34,7 @@ public class SystemConfigConstants {
     public static final String FEATURE_NEW_NUMEROLOGY_MONTH = "FEATURE_NEW_NUMEROLOGY_MONTH";
     public static final String FEATURE_NEW_NUMEROLOGY_YEAR = "FEATURE_NEW_NUMEROLOGY_YEAR";
     public static final String FEATURE_NEW_DREAM = "FEATURE_NEW_DREAM";
+    public static final String FEATURE_NEW_SUBSCRIPTIONS = "FEATURE_NEW_SUBSCRIPTIONS";
 
     public static final String FEATURE_HOT_THREE_CARD = "FEATURE_HOT_THREE_CARD";
     public static final String FEATURE_HOT_HORSESHOE = "FEATURE_HOT_HORSESHOE";
@@ -43,4 +44,5 @@ public class SystemConfigConstants {
     public static final String FEATURE_HOT_NUMEROLOGY_MONTH = "FEATURE_HOT_NUMEROLOGY_MONTH";
     public static final String FEATURE_HOT_NUMEROLOGY_YEAR = "FEATURE_HOT_NUMEROLOGY_YEAR";
     public static final String FEATURE_HOT_DREAM = "FEATURE_HOT_DREAM";
+    public static final String FEATURE_HOT_SUBSCRIPTIONS = "FEATURE_HOT_SUBSCRIPTIONS";
 }

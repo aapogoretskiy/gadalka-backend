@@ -35,7 +35,8 @@ public class FeatureBadgeService {
                 readBadge(FEATURE_NEW_NUMEROLOGY_WEEK, FEATURE_HOT_NUMEROLOGY_WEEK),
                 readBadge(FEATURE_NEW_NUMEROLOGY_MONTH, FEATURE_HOT_NUMEROLOGY_MONTH),
                 readBadge(FEATURE_NEW_NUMEROLOGY_YEAR, FEATURE_HOT_NUMEROLOGY_YEAR),
-                readBadge(FEATURE_NEW_DREAM, FEATURE_HOT_DREAM)
+                readBadge(FEATURE_NEW_DREAM, FEATURE_HOT_DREAM),
+                readBadge(FEATURE_NEW_SUBSCRIPTIONS, FEATURE_HOT_SUBSCRIPTIONS)
         );
     }
 
@@ -66,9 +67,13 @@ public class FeatureBadgeService {
         writeBadge(FEATURE_NEW_NUMEROLOGY_MONTH, FEATURE_HOT_NUMEROLOGY_MONTH, badges.numerologyMonth());
         writeBadge(FEATURE_NEW_NUMEROLOGY_YEAR, FEATURE_HOT_NUMEROLOGY_YEAR, badges.numerologyYear());
         writeBadge(FEATURE_NEW_DREAM, FEATURE_HOT_DREAM, badges.dream());
+        writeBadge(FEATURE_NEW_SUBSCRIPTIONS, FEATURE_HOT_SUBSCRIPTIONS, badges.subscriptions());
     }
 
     private void writeBadge(String newKey, String hotKey, FeatureBadgeDto value) {
+        if (value == null) {
+            return;
+        }
         writeIfChanged(newKey, value.isNew());
         writeIfChanged(hotKey, value.isHot());
     }

@@ -3,7 +3,8 @@ package ru.sapa.gadalka_backend.api.dto.admin;
 /**
  * Отметки «Новинка» / «Хит» по всем платным функциям сразу.
  * Набор полей зеркалит {@link FeatureCostsDto} — те же 8 функций,
- * только вместо цены у каждой пара флагов + служебная дата.
+ * только вместо цены у каждой пара флагов + служебная дата. Плюс девятое поле
+ * subscriptions — у него цены нет, это отметка на кнопке входа в оплату.
  *
  * <p>Используется и для чтения (GET /api/admin/feature-badges, GET /api/feature-badges),
  * и для записи (PUT /api/admin/feature-badges).
@@ -16,5 +17,6 @@ public record FeatureBadgesDto(
         FeatureBadgeDto numerologyWeek,
         FeatureBadgeDto numerologyMonth,
         FeatureBadgeDto numerologyYear,
-        FeatureBadgeDto dream
+        FeatureBadgeDto dream,
+        FeatureBadgeDto subscriptions
 ) {}
