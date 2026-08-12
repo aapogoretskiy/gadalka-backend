@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import ru.sapa.gadalka_backend.api.dto.telegram.TelegramUserDto;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.repository.UserRepository;
+import ru.sapa.gadalka_backend.service.NotificationAccessService;
 import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.UserService;
 
@@ -31,6 +32,7 @@ public class MeController extends BaseController {
     private final UserService userService;
     private final ReferralService referralService;
     private final UserRepository userRepository;
+    private final NotificationAccessService notificationAccessService;
 
     /**
      * POST /api/me/accept-terms
@@ -56,6 +58,27 @@ public class MeController extends BaseController {
     }
 
     public record AcceptTermsRequest(String termsVersion) {}
+
+    /**
+     * POST /api/me/notifications-allowed
+     *
+     * <p>Пользователь нажал «Разрешить» в баннере уведомлений и Telegram подтвердил
+     * доступ. Сам Telegram присылает боту служебное write_access_allowed только когда
+     * разрешение реально меняется — если человек когда-то жал /start, право писать уже
+     * есть, служебного сообщения нет, и бэкенд об этом никогда не узнавал. Из-за этого
+     * баннер возвращался после каждой перезагрузки.
+     *
+     * <p>Проверяем доступ фактом отправки приветствия (см. NotificationAccessService),
+     * а не на слово клиенту: {@code allowed=false} значит, что бот писать не может —
+     * фронт покажет подсказку, а флаг в БД останется честным.
+     */
+    @PostMapping("/me/notifications-allowed")
+    @Operation(summary = "Подтвердить, что бот может писать пользователю")
+    public ResponseEntity<Map<String, Boolean>> confirmNotificationsAllowed(HttpServletRequest request) {
+        User user = resolveUser(request);
+        boolean allowed = notificationAccessService.confirmWriteAccess(user);
+        return ResponseEntity.ok(Map.of("allowed", allowed));
+    }
 
     @GetMapping("/me")
     @Operation(summary = "Получение пользователя по bearer токену")

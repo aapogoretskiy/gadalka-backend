@@ -30,6 +30,7 @@ public class TelegramAuthService {
     private final UserRepository userRepository;
     private final ReferralService referralService;
     private final FortuneCreditService fortuneCreditService;
+    private final NotificationAccessService notificationAccessService;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -116,6 +117,14 @@ public class TelegramAuthService {
                 // Новый пользователь без start_param: мог открыть через кнопку меню.
                 // Ищем BOT_ENTRY — если кликал по реф-ссылке раньше, зачислим награду рефереру.
                 referralService.tryRecordFromBotEntry(telegramUser.getId(), user);
+            }
+
+            // Пользователь числится недостижимым — тихо проверяем, так ли это на самом
+            // деле. Частый случай: человек нажал /start в боте ДО первой авторизации,
+            // в тот момент его ещё не было в БД и бот не смог поставить отметку, а сам
+            // он боту больше не пишет. Проверка асинхронная и не задерживает ответ.
+            if (!user.isNotificationsAllowed()) {
+                notificationAccessService.pingReachabilityAsync(user.getId());
             }
 
             String token = jwtService.generateToken(String.valueOf(user.getId()));
