@@ -13,6 +13,7 @@ import ru.sapa.gadalka_backend.mapper.UserMapper;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.JwtService;
+import ru.sapa.gadalka_backend.service.NotificationAccessService;
 import ru.sapa.gadalka_backend.service.ReferralService;
 import ru.sapa.gadalka_backend.service.TelegramAuthService;
 
@@ -44,6 +45,7 @@ class TelegramAuthServiceReferralTest {
     @Mock private UserRepository userRepository;
     @Mock private ReferralService referralService;
     @Mock private FortuneCreditService fortuneCreditService;
+    @Mock private NotificationAccessService notificationAccessService;
 
     private TelegramAuthService service;
 
@@ -55,7 +57,7 @@ class TelegramAuthServiceReferralTest {
     @BeforeEach
     void setUp() throws Exception {
         service = new TelegramAuthService(userMapper, jwtService, new ObjectMapper(),
-                userRepository, referralService, fortuneCreditService);
+                userRepository, referralService, fortuneCreditService, notificationAccessService);
         setField(service, "botToken", "test_token");
         setField(service, "authEnabled", false);  // отключаем HMAC-проверку
     }
