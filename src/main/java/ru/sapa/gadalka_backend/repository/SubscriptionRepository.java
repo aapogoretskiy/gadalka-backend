@@ -37,8 +37,14 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
 
     /**
      * Кандидаты на обязательное по п. 6.12.4 соглашения уведомление об автосписании:
-     * автопродление включено, уведомление ещё не отправлено, до истечения — не больше
+     * автопродление включено, уведомление ещё не ДОСТАВЛЕНО, до истечения — не больше
      * 3 календарных дней (noticeThreshold = now + 3 дня).
+     * <p>
+     * Условие именно по renewalNoticeDeliveredAt, а не по «попытке отправки»: если
+     * доставить не удалось (пользователь заблокировал бота), подписка намеренно остаётся
+     * кандидатом и попытка повторится на следующем цикле — бота могли уже разблокировать.
+     * Ценой одного лишнего SELECT в час это спасает автопродление, которое иначе просто
+     * не состоялось бы (списывать без доставленного уведомления нельзя).
      * <p>
      * Намеренно НЕ ловим уже истёкшие без уведомления подписки (условие {@code expiresAt > now}) —
      * если предупредить не успели (простой бэкенда), списывать всё равно нельзя: подписка
@@ -48,7 +54,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             SELECT s FROM Subscription s
             WHERE s.status = 'ACTIVE'
               AND s.autoRenewEnabled = true
-              AND s.renewalNoticeSentAt IS NULL
+              AND s.renewalNoticeDeliveredAt IS NULL
               AND s.expiresAt > :now
               AND s.expiresAt <= :noticeThreshold
             """)
@@ -59,8 +65,13 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
      * Кандидаты на реальное автосписание согласно п. 6.12.3 соглашения: списание должно
      * произойти в последние 24 часа ТЕКУЩЕГО расчётного периода — то есть ДО истечения,
      * а не после (условие {@code expiresAt > now AND expiresAt <= chargeWindowEnd}, где
-     * chargeWindowEnd = now + 24ч). Обязательное уведомление (п. 6.12.4) уже должно быть
-     * отправлено к этому моменту.
+     * chargeWindowEnd = now + 24ч).
+     * <p>
+     * Обязательное уведомление к этому моменту должно быть не просто отправлено, а
+     * ДОСТАВЛЕНО (renewalNoticeDeliveredAt), и с момента доставки должно пройти не меньше
+     * 24 часов — noticeDeadline = now - 24ч. Это прямое требование ст. 16.1 ЗоЗПП (376-ФЗ):
+     * раньше проверки не было вовсе, и при простое бэкенда уведомление могло уйти и деньги
+     * списаться в один и тот же час.
      */
     @Query("""
             SELECT s FROM Subscription s
@@ -68,10 +79,12 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
               AND s.autoRenewEnabled = true
               AND s.expiresAt > :now
               AND s.expiresAt <= :chargeWindowEnd
-              AND s.renewalNoticeSentAt IS NOT NULL
+              AND s.renewalNoticeDeliveredAt IS NOT NULL
+              AND s.renewalNoticeDeliveredAt <= :noticeDeadline
             """)
     List<Subscription> findAutoRenewChargeCandidates(@Param("now") OffsetDateTime now,
-                                                      @Param("chargeWindowEnd") OffsetDateTime chargeWindowEnd);
+                                                      @Param("chargeWindowEnd") OffsetDateTime chargeWindowEnd,
+                                                      @Param("noticeDeadline") OffsetDateTime noticeDeadline);
 
     /**
      * Подписки, зависшие в RENEWAL_PENDING дольше разумного времени ожидания вебхука —

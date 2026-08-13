@@ -8,6 +8,7 @@ import ru.sapa.gadalka_backend.domain.PaymentProduct;
 import ru.sapa.gadalka_backend.domain.Subscription;
 import ru.sapa.gadalka_backend.domain.SubscriptionAutorenewConsentLog;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
+import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.ConsentAction;
 import ru.sapa.gadalka_backend.domain.type.CreditTransactionReason;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
@@ -130,13 +131,18 @@ public class PaymentService {
      * чтобы переиспользовать существующие стратегии провайдеров без изменений:
      * им от продукта нужны только цены и название (для чека/инвойса).
      *
+     * @param user              покупатель целиком, а не только его id: при согласии на
+     *                          автопродление в журнал согласий пишется ещё и telegram_id —
+     *                          единственный идентификатор, который там переживёт удаление
+     *                          аккаунта (см. SubscriptionAutorenewConsentLog и миграцию V72).
      * @param autoRenewConsent явное согласие пользователя на автопродление (отдельный
      *                         чекбокс, см. CreateSubscriptionPaymentRequest). Пробрасывается
      *                         в Payment.autoRenewRequested — на его основе RobokassaStrategy
      *                         решает, добавлять ли Recurring=true в форму оплаты.
      */
     @Transactional
-    public String createSubscriptionPayment(Long userId, SubscriptionPlan plan, PaymentProvider provider, boolean autoRenewConsent) {
+    public String createSubscriptionPayment(User user, SubscriptionPlan plan, PaymentProvider provider, boolean autoRenewConsent) {
+        Long userId = user.getId();
         PaymentProviderStrategy strategy = getStrategy(provider);
         PaymentProduct planAsProduct = toTransientProduct(plan);
 
@@ -170,6 +176,7 @@ public class PaymentService {
         if (effectiveAutoRenew) {
             consentLogRepository.save(SubscriptionAutorenewConsentLog.builder()
                     .userId(userId)
+                    .telegramId(user.getTelegramId())
                     .paymentId(payment.getId())
                     .action(ConsentAction.GRANTED)
                     .build());

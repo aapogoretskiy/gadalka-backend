@@ -15,6 +15,14 @@ import java.time.OffsetDateTime;
  * состояние флага {@code Subscription.autoRenewEnabled}. Пригодится и как
  * доказательная база при спорах/возвратах: видно, какое согласие действовало
  * перед конкретным списанием.
+ * <p>
+ * Единственное исключение из append-only — дозаполнение {@link #subscriptionId}
+ * сразу после активации подписки (см. SubscriptionActivationService): в момент
+ * клика по чекбоксу подписки ещё не существует, связать строку не с чем.
+ * <p>
+ * Журнал переживает удаление пользователя (миграция V72): {@code user_id} обнуляется
+ * по ON DELETE SET NULL, а {@link #telegramId} остаётся — иначе вместе с аккаунтом
+ * исчезало бы и доказательство правомерности уже совершённых списаний.
  */
 @Entity
 @Table(name = "subscription_autorenew_consent_log")
@@ -29,8 +37,21 @@ public class SubscriptionAutorenewConsentLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
+    /**
+     * Ссылка на пользователя, пока он существует. NULL — аккаунт удалён:
+     * FK стоит с ON DELETE SET NULL, сама строка журнала при этом сохраняется
+     * (см. {@link #telegramId}).
+     */
+    @Column(name = "user_id")
     private Long userId;
+
+    /**
+     * Telegram id пользователя на момент события — денормализован намеренно.
+     * Это единственный идентификатор, который остаётся у строки после удаления
+     * аккаунта, поэтому именно по нему журнал сопоставляется с прошлыми списаниями.
+     */
+    @Column(name = "telegram_id")
+    private Long telegramId;
 
     /** Платёж, в рамках оформления которого дано согласие. NULL — простой отзыв вне оплаты */
     @Column(name = "payment_id")

@@ -108,7 +108,7 @@ public class SubscriptionController extends BaseController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "У вас уже есть активная подписка. Новую можно оформить после её окончания.");
         }
 
-        String url = paymentService.createSubscriptionPayment(user.getId(), plan, provider, body.autoRenewConsent());
+        String url = paymentService.createSubscriptionPayment(user, plan, provider, body.autoRenewConsent());
         return ResponseEntity.ok(new CreatePaymentResponse(url));
     }
 

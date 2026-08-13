@@ -23,7 +23,8 @@ import java.util.List;
  *    не позднее чем за 3 календарных дня до автосписания, с возможностью отключить автопродление.
  * 2) {@link #chargeRenewals()} — первая попытка списания строго в последние 24 часа ТЕКУЩЕГО
  *    расчётного периода (п. 6.12.3 соглашения) — то есть ДО истечения подписки, а не после,
- *    и только если уведомление уже было отправлено.
+ *    и только если уведомление реально ДОСТАВЛЕНО пользователю и с момента доставки прошло
+ *    не меньше 24 часов (ст. 16.1 ЗоЗПП).
  * 3) {@link #reconcileStuckRenewals()} — подчищает попытки списания, зависшие без вебхука
  *    (Robokassa приняла запрос, но ResultURL так и не пришёл).
  * 4) {@link #retryFailedRenewals()} — повторные попытки для подписок в SUSPENDED, не чаще
@@ -34,10 +35,12 @@ import java.util.List;
  * знаков и бесплатные функции доступны как обычно (п. 6.13.2). Единая точка обработки любой
  * неудачной попытки (из чем бы она ни была вызвана) — {@link #handleFailedRenewalAttempt}.
  * <p>
- * Если уведомление за 3 дня не успели отправить до истечения подписки (например, бэкенд
- * лежал) — подписка просто истекает как обычно, без автопродления в этом цикле. Списывать
- * без предупреждения нельзя, поэтому такие подписки намеренно не попадают в выборку
- * (см. {@code SubscriptionRepository#findAutoRenewNoticeCandidates}).
+ * Если уведомление за 3 дня не успели доставить до истечения подписки (бэкенд лежал,
+ * пользователь заблокировал бота) — подписка просто истекает как обычно, без автопродления
+ * в этом цикле. Списывать без доставленного предупреждения нельзя ни при каких условиях,
+ * даже ценой недополученных денег: {@code renewalNoticeDeliveredAt} остаётся NULL, и такая
+ * подписка не попадает в выборку на списание
+ * (см. {@code SubscriptionRepository#findAutoRenewChargeCandidates}).
  */
 @Slf4j
 @Service
@@ -49,6 +52,14 @@ public class SubscriptionRenewalScheduler {
 
     /** Максимум ретраев (п. 6.13.1 соглашения) — 7 календарных дней с первой неудачи. */
     private static final int MAX_RETRY_DAYS = 7;
+
+    /**
+     * Минимальный срок между ДОСТАВКОЙ уведомления и списанием — 24 часа (ст. 16.1 ЗоЗПП).
+     * Обычно уведомление уходит за ~3 суток, но при простое бэкенда подписка может попасть
+     * в выборку позже — тогда этот запас сдвигает списание, а если он не помещается
+     * в оставшееся окно, автопродления в этом цикле просто не будет.
+     */
+    private static final int NOTICE_MIN_LEAD_HOURS = 24;
 
     private final SubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
@@ -72,18 +83,21 @@ public class SubscriptionRenewalScheduler {
         for (Subscription subscription : candidates) {
             User user = userRepository.findById(subscription.getUserId()).orElse(null);
 
-            // Помечаем как отправленное даже если реально не отправили (нет юзера/забанен/бот
-            // заблокирован) — иначе кандидат будет попадать в выборку каждый час без толку.
-            // Раз уведомление физически не доставлено, дальнейшее автосписание всё равно
-            // не должно случиться "молча" — но это уже проверяется на стороне chargeRenewals
-            // отдельными данными, здесь просто не повторяем бесполезную попытку.
+            // Фиксируем сам факт попытки — это диагностика, права на списание она не даёт.
             subscription.setRenewalNoticeSentAt(now);
 
+            // Юзера нет или он забанен — доставлять некому, и само это не изменится:
+            // Telegram даже не дёргаем. renewalNoticeDeliveredAt остаётся NULL, а значит
+            // chargeRenewals такую подписку не возьмёт и деньги не спишутся.
             if (user == null || user.isBanned()) {
                 continue;
             }
 
+            // Право на списание даёт ТОЛЬКО реально доставленное уведомление (ст. 16.1 ЗоЗПП).
+            // Не доставили (бот заблокирован) — кандидат остаётся в выборке, повторим
+            // на следующем цикле, пока не закроется 3-дневное окно.
             if (telegramBot.sendAutoRenewNotice(user.getTelegramId(), buildNoticeMessage(subscription))) {
+                subscription.setRenewalNoticeDeliveredAt(now);
                 sent++;
             }
         }
@@ -98,7 +112,7 @@ public class SubscriptionRenewalScheduler {
         if (!enabled) return;
 
         OffsetDateTime now = OffsetDateTime.now();
-        List<Subscription> candidates = subscriptionRepository.findAutoRenewChargeCandidates(now, now.plusHours(24));
+        List<Subscription> candidates = subscriptionRepository.findAutoRenewChargeCandidates(now, now.plusHours(24), now.minusHours(NOTICE_MIN_LEAD_HOURS));
         if (candidates.isEmpty()) return;
 
         for (Subscription subscription : candidates) {

@@ -9,7 +9,9 @@ import ru.sapa.gadalka_backend.domain.Subscription;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlanQuota;
 import ru.sapa.gadalka_backend.domain.SubscriptionQuota;
+import ru.sapa.gadalka_backend.domain.type.ConsentAction;
 import ru.sapa.gadalka_backend.domain.type.QuotaPeriod;
+import ru.sapa.gadalka_backend.repository.SubscriptionAutorenewConsentLogRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanQuotaRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionQuotaRepository;
@@ -33,6 +35,7 @@ public class SubscriptionActivationService {
     private final SubscriptionPlanRepository planRepository;
     private final SubscriptionPlanQuotaRepository planQuotaRepository;
     private final SubscriptionQuotaRepository quotaRepository;
+    private final SubscriptionAutorenewConsentLogRepository consentLogRepository;
 
     /**
      * Создаёт подписку и СНАПШОТ её квот из плана.
@@ -90,6 +93,7 @@ public class SubscriptionActivationService {
 
         Subscription subscription = builder.build();
         subscription = subscriptionRepository.save(subscription);
+        linkConsentLogToSubscription(payment, subscription);
 
         // Снапшот квот плана → квоты подписки
         List<SubscriptionPlanQuota> planQuotas = planQuotaRepository.findAllByPlanId(plan.getId());
@@ -114,6 +118,29 @@ public class SubscriptionActivationService {
         log.info("Подписка активирована: subscriptionId={}, userId={}, plan='{}' (planId={}), до {}, квот: {}, autoRenew={}",
                 subscription.getId(), payment.getUserId(), plan.getName(), plan.getId(),
                 subscription.getExpiresAt(), planQuotas.size(), subscription.getAutoRenewEnabled());
+    }
+
+    /**
+     * Дозаполняет subscription_id у строки согласия на автопродление — единственное
+     * отступление от append-only природы журнала.
+     * <p>
+     * PaymentService пишет GRANTED в момент клика по чекбоксу, когда подписки ещё
+     * не существует (она появится только после webhook'а), поэтому связать строку
+     * можно лишь здесь
+     * <p>
+     * Автоматические продления пропускаем: своего согласия они не создают (оно
+     * унаследовано от первой покупки), связывать нечего.
+     */
+    private void linkConsentLogToSubscription(Payment payment, Subscription subscription) {
+        if (!Boolean.TRUE.equals(payment.getAutoRenewRequested())) return;
+        if (payment.getRenewalOfSubscriptionId() != null) return;
+
+        consentLogRepository.findFirstByPaymentIdAndActionOrderByIdDesc(payment.getId(), ConsentAction.GRANTED)
+                .ifPresentOrElse(consent -> {
+                    consent.setSubscriptionId(subscription.getId());
+                    consentLogRepository.save(consent);
+                }, () -> log.warn("Не найдено согласие на автопродление для платежа: paymentId={}, subscriptionId={}",
+                        payment.getId(), subscription.getId()));
     }
 
     /**

@@ -97,8 +97,11 @@ public class SubscriptionCancellationService {
         }
         subscriptionRepository.save(subscription);
 
+        Long telegramId = userRepository.findById(userId).map(User::getTelegramId).orElse(null);
+
         consentLogRepository.save(SubscriptionAutorenewConsentLog.builder()
                 .userId(userId)
+                .telegramId(telegramId)
                 .subscriptionId(subscription.getId())
                 .action(ConsentAction.REVOKED)
                 .build());
