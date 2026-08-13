@@ -58,6 +58,7 @@ import ru.sapa.gadalka_backend.service.AdminPaymentService;
 import ru.sapa.gadalka_backend.service.BroadcastService;
 import ru.sapa.gadalka_backend.service.FeatureBadgeService;
 import ru.sapa.gadalka_backend.service.FeatureCostService;
+import ru.sapa.gadalka_backend.service.AdminSubscriptionService;
 import ru.sapa.gadalka_backend.service.InboxService;
 import ru.sapa.gadalka_backend.service.FortuneCreditService;
 import ru.sapa.gadalka_backend.service.ReportService;
@@ -143,6 +144,7 @@ public class AdminController {
     private final GadalkaTelegramBot telegramBot;
     private final SubscriptionGiftService subscriptionGiftService;
     private final SubscriptionCancellationService subscriptionCancellationService;
+    private final AdminSubscriptionService adminSubscriptionService;
     private final BroadcastService broadcastService;
     private final InboxService inboxService;
     private final ReportService reportService;
@@ -1492,6 +1494,59 @@ public class AdminController {
 
         Optional<TransactionDetailsDto> details = adminPaymentService.getTransactionDetails(id);
         return details.<ResponseEntity<?>>map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * GET /api/admin/subscriptions
+     *
+     * <p>Список купленных подписок для вкладки «Подписчики» — кто подписан, до какого числа,
+     * что с автопродлением. Не путать с {@code /api/admin/subscription-plans}: там справочник
+     * планов, здесь — сами подписки пользователей.
+     *
+     * @param problemsOnly только требующие внимания: ретраи списания, зависшее списание,
+     *                     либо включённое автопродление, которого фактически уже не будет
+     */
+    @GetMapping("/subscriptions")
+    public ResponseEntity<?> getSubscriptions(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long planId,
+            @RequestParam(required = false) Boolean autoRenew,
+            @RequestParam(defaultValue = "false") boolean problemsOnly,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            HttpServletRequest request) {
+
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        if (!isFullAdmin(request)) {
+            log.warn("telegramId={} (роль не ADMIN) попытался получить список подписок", adminId);
+            return ResponseEntity.status(403).body(Map.of("message", "Подписки доступны только администраторам"));
+        }
+
+        log.info("Admin {} запросил список подписок: status={}, planId={}, autoRenew={}, problemsOnly={}, search={}, page={}",
+                adminId, status, planId, autoRenew, problemsOnly, search, page);
+
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "expiresAt"));
+        return ResponseEntity.ok(adminSubscriptionService.list(status, planId, autoRenew, problemsOnly, search, pageable));
+    }
+
+    /**
+     * GET /api/admin/subscriptions/stats
+     *
+     * <p>Счётчики над таблицей подписчиков: сколько действующих, сколько на автопродлении,
+     * сколько приостановлено, сколько истекает на неделе и сколько «зомби» — подписок
+     * с включённым автопродлением, которое фактически уже не сработает (в норме их 0).
+     */
+    @GetMapping("/subscriptions/stats")
+    public ResponseEntity<?> getSubscriptionStats(HttpServletRequest request) {
+        Long adminId = (Long) request.getAttribute("adminTelegramId");
+        if (!isFullAdmin(request)) {
+            log.warn("telegramId={} (роль не ADMIN) попытался получить статистику подписок", adminId);
+            return ResponseEntity.status(403).body(Map.of("message", "Подписки доступны только администраторам"));
+        }
+
+        log.info("Admin {} запросил статистику подписок", adminId);
+        return ResponseEntity.ok(adminSubscriptionService.stats());
     }
 
     private boolean isFullAdmin(HttpServletRequest request) {

@@ -1,6 +1,7 @@
 package ru.sapa.gadalka_backend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.sapa.gadalka_backend.domain.Subscription;
@@ -9,7 +10,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
-public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
+public interface SubscriptionRepository extends JpaRepository<Subscription, Long>, JpaSpecificationExecutor<Subscription> {
 
     @Query("""
             SELECT s FROM Subscription s
@@ -113,6 +114,55 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
               AND s.lastRenewalAttemptAt <= :retryCutoff
             """)
     List<Subscription> findAutoRenewRetryCandidates(@Param("retryCutoff") OffsetDateTime retryCutoff);
+
+    // ── Счётчики для вкладки «Подписчики» в админке (AdminSubscriptionService#stats) ──
+
+    /** Действующие подписки: статус ACTIVE и срок ещё не истёк */
+    @Query("""
+            SELECT COUNT(s) FROM Subscription s
+            WHERE s.status = 'ACTIVE' AND s.expiresAt > :now
+            """)
+    long countActive(@Param("now") OffsetDateTime now);
+
+    /** Действующие подписки с включённым автопродлением */
+    @Query("""
+            SELECT COUNT(s) FROM Subscription s
+            WHERE s.status = 'ACTIVE' AND s.expiresAt > :now AND s.autoRenewEnabled = true
+            """)
+    long countActiveWithAutoRenew(@Param("now") OffsetDateTime now);
+
+    /** Действующие подписки, истекающие в ближайшие N дней (until = now + N дней) */
+    @Query("""
+            SELECT COUNT(s) FROM Subscription s
+            WHERE s.status = 'ACTIVE' AND s.expiresAt > :now AND s.expiresAt <= :until
+            """)
+    long countExpiringBefore(@Param("now") OffsetDateTime now, @Param("until") OffsetDateTime until);
+
+    long countByStatus(String status);
+
+    /**
+     * «Зомби»: автопродление включено, но списать по такой подписке уже невозможно —
+     * она вне активных статусов либо ACTIVE с истёкшим сроком, а все выборки шедулера
+     * требуют ACTIVE/SUSPENDED/RENEWAL_PENDING. Пользователь при этом видит включённое
+     * автопродление, которого фактически нет. В норме должно быть 0.
+     */
+    @Query("""
+            SELECT COUNT(s) FROM Subscription s
+            WHERE s.autoRenewEnabled = true
+              AND (s.status NOT IN ('ACTIVE', 'SUSPENDED', 'RENEWAL_PENDING')
+                   OR (s.status = 'ACTIVE' AND s.expiresAt <= :now))
+            """)
+    long countAutoRenewZombies(@Param("now") OffsetDateTime now);
+
+    /**
+     * Сумма зафиксированных цен по действующим подпискам на автопродлении (в копейках) —
+     * сколько спишется за следующий полный цикл, если все продления пройдут успешно.
+     */
+    @Query("""
+            SELECT COALESCE(SUM(s.lockedPriceRub), 0) FROM Subscription s
+            WHERE s.status = 'ACTIVE' AND s.expiresAt > :now AND s.autoRenewEnabled = true
+            """)
+    long sumAutoRenewLockedPrice(@Param("now") OffsetDateTime now);
 
     /**
      * Активные подписки с включённым автопродлением на конкретном плане — адресаты

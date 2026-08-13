@@ -496,6 +496,28 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     /** Кнопка, открывающая Mini App сразу на экране профиля (управление подпиской). */
+    /**
+     * Сообщает, что подписка закрыта досрочно — все включённые в неё разборы потрачены
+     * (см. {@code SubscriptionExhaustedNotifier}). Текст формирует вызывающая сторона:
+     * то же самое сообщение уходит и во «Входящие» внутри приложения, только без Markdown.
+     */
+    public void sendSubscriptionExhaustedNotice(Long telegramId, String text) {
+        SendMessage message = SendMessage.builder()
+                .chatId(telegramId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(profileKeyboard("⚙️ Открыть профиль"))
+                .build();
+
+        try {
+            telegramClient.execute(message);
+            log.info("Уведомление об исчерпанной подписке отправлено: telegramId={}", telegramId);
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось отправить уведомление об исчерпанной подписке: telegramId={}, error={}",
+                    telegramId, e.getMessage());
+        }
+    }
+
     private InlineKeyboardMarkup profileKeyboard(String buttonText) {
         String profileUrl = appUrl + (appUrl.contains("?") ? "&" : "?") + "screen=profile";
         InlineKeyboardButton button = InlineKeyboardButton.builder()

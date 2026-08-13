@@ -7,14 +7,12 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.bot.GadalkaTelegramBot;
 import ru.sapa.gadalka_backend.domain.Payment;
 import ru.sapa.gadalka_backend.domain.Subscription;
-import ru.sapa.gadalka_backend.domain.SubscriptionAutorenewConsentLog;
 import ru.sapa.gadalka_backend.domain.User;
-import ru.sapa.gadalka_backend.domain.type.ConsentAction;
+import ru.sapa.gadalka_backend.domain.type.ConsentRevokeReason;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
 import ru.sapa.gadalka_backend.domain.type.PaymentStatus;
 import ru.sapa.gadalka_backend.domain.type.PurchaseType;
 import ru.sapa.gadalka_backend.repository.PaymentRepository;
-import ru.sapa.gadalka_backend.repository.SubscriptionAutorenewConsentLogRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
 
@@ -44,7 +42,7 @@ public class SubscriptionCancellationService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final GadalkaTelegramBot telegramBot;
-    private final SubscriptionAutorenewConsentLogRepository consentLogRepository;
+    private final AutoRenewRevocationService autoRenewRevocationService;
 
     /**
      * Отказ от активной подписки самим пользователем.
@@ -58,7 +56,7 @@ public class SubscriptionCancellationService {
                 .findActiveByUserId(userId, OffsetDateTime.now())
                 .orElseThrow(() -> new IllegalStateException("Активной подписки нет"));
 
-        markCancelled(subscription);
+        markCancelled(subscription, ConsentRevokeReason.SUBSCRIPTION_CANCELLED);
         log.info("Пользователь отказался от подписки: userId={}, subscriptionId={}, plan='{}'",
                 userId, subscription.getId(), subscription.getPlanName());
         return subscription;
@@ -72,7 +70,7 @@ public class SubscriptionCancellationService {
      * <p>
      * Это прямая реализация обязательного по п. 6.15.1 соглашения права в любой момент
      * отозвать согласие на использование ранее сохранённых платёжных реквизитов —
-     * пишем это в {@link SubscriptionAutorenewConsentLog} как REVOKED.
+     * сам отзыв и его запись в журнал делает {@link AutoRenewRevocationService}.
      * <p>
      * Работает и для SUSPENDED (подписка с неудачным списанием, идут ретраи, см.
      * SubscriptionRenewalScheduler) — иначе пользователь не смог бы остановить повторные
@@ -87,24 +85,16 @@ public class SubscriptionCancellationService {
                 .filter(s -> Boolean.TRUE.equals(s.getAutoRenewEnabled()))
                 .orElseThrow(() -> new IllegalStateException("Активной подписки с автопродлением нет"));
 
-        subscription.setAutoRenewEnabled(false);
+        autoRenewRevocationService.revoke(subscription, ConsentRevokeReason.USER_REQUEST);
+
         // Если ретраи уже шли (SUSPENDED) — дальше пробовать нечего, раз пользователь сам
         // отказался от автопродления: завершаем сразу, а не ждём, пока истекут все 7 дней
         // (иначе подписка бы зависла в SUSPENDED навсегда — retryFailedRenewals её больше
         // не подхватит, т.к. фильтрует по autoRenewEnabled = true).
         if ("SUSPENDED".equals(subscription.getStatus())) {
             subscription.setStatus("EXPIRED");
+            subscriptionRepository.save(subscription);
         }
-        subscriptionRepository.save(subscription);
-
-        Long telegramId = userRepository.findById(userId).map(User::getTelegramId).orElse(null);
-
-        consentLogRepository.save(SubscriptionAutorenewConsentLog.builder()
-                .userId(userId)
-                .telegramId(telegramId)
-                .subscriptionId(subscription.getId())
-                .action(ConsentAction.REVOKED)
-                .build());
 
         log.info("Пользователь отключил автопродление: userId={}, subscriptionId={}", userId, subscription.getId());
         return subscription;
@@ -142,7 +132,7 @@ public class SubscriptionCancellationService {
                 .findActiveByUserId(payment.getUserId(), OffsetDateTime.now());
         boolean cancelled = false;
         if (activeOpt.isPresent()) {
-            markCancelled(activeOpt.get());
+            markCancelled(activeOpt.get(), ConsentRevokeReason.PAYMENT_REFUNDED);
             cancelled = true;
         }
 
@@ -166,9 +156,18 @@ public class SubscriptionCancellationService {
         return new RefundResult(cancelled, starsRefunded, note);
     }
 
-    private void markCancelled(Subscription subscription) {
+    /**
+     * Переводит подписку в CANCELLED и отзывает согласие на автопродление.
+     * <p>
+     * Списаний по CANCELLED и так не будет (шедулер берёт только ACTIVE и SUSPENDED), но
+     * незакрытая запись в журнале выглядит как действующее согласие — а при возврате денег
+     * это ровно тот документ, который будут смотреть в споре. Причина отзыва передаётся
+     * вызывающей стороной: отказ пользователя и возврат админом — разные основания.
+     */
+    private void markCancelled(Subscription subscription, ConsentRevokeReason reason) {
         subscription.setStatus("CANCELLED");
         subscription.setCancelledAt(OffsetDateTime.now());
         subscriptionRepository.save(subscription);
+        autoRenewRevocationService.revoke(subscription, reason);
     }
 }

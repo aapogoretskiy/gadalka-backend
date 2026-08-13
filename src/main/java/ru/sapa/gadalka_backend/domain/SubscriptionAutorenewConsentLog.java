@@ -3,6 +3,7 @@ package ru.sapa.gadalka_backend.domain;
 import jakarta.persistence.*;
 import lombok.*;
 import ru.sapa.gadalka_backend.domain.type.ConsentAction;
+import ru.sapa.gadalka_backend.domain.type.ConsentRevokeReason;
 
 import java.time.OffsetDateTime;
 
@@ -64,6 +65,15 @@ public class SubscriptionAutorenewConsentLog {
     @Enumerated(EnumType.STRING)
     @Column(name = "action", nullable = false, length = 20)
     private ConsentAction action;
+
+    /**
+     * Почему согласие отозвано. Заполняется только у REVOKED: отзыв бывает и по воле
+     * пользователя, и по нашей инициативе (исчерпание квот, отказ от подписки, возврат
+     * денег) — в споре это принципиально разные ситуации. У GRANTED всегда NULL.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reason", length = 50)
+    private ConsentRevokeReason reason;
 
     /** Версия оферты, действовавшая на момент согласия — для доказательной базы */
     @Column(name = "agreement_version", length = 50)
