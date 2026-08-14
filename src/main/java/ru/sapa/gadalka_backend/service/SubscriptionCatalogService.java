@@ -79,6 +79,7 @@ public class SubscriptionCatalogService {
                         sub.getStatus(),
                         "SUSPENDED".equals(sub.getStatus()) && sub.getRenewalFirstFailedAt() != null
                                 ? sub.getRenewalFirstFailedAt().plusDays(7) : null,
+                        subscriptionQuotaService.isFullyExhausted(sub.getId()),
                         subscriptionQuotaService.getAllQuotaStates(sub.getId()).stream()
                                 .map(q -> new MySubscriptionResponse.QuotaStateDto(
                                         q.featureType(), q.period(),

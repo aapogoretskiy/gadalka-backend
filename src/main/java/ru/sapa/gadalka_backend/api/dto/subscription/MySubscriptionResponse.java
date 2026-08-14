@@ -19,6 +19,12 @@ public record MySubscriptionResponse(
         String status,
         /** Только при status=SUSPENDED: дедлайн ретраев (7 дней с первой неудачи, п. 6.13.1). Иначе null. */
         OffsetDateTime retryDeadline,
+        /**
+         * Лимиты подписки исчерпаны полностью и до конца периода не восстановятся.
+         * По этому флагу фронт показывает каталог планов с предупреждением, что новая
+         * подписка заменит текущую (обычно при активной подписке каталог скрыт).
+         */
+        boolean quotasExhausted,
         List<QuotaStateDto> quotas
 ) {
     /**

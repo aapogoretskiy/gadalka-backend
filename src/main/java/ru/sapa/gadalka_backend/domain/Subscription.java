@@ -58,7 +58,11 @@ public class Subscription {
     private Integer lastReminderDaysLeft;
 
     /**
-     * ACTIVE, EXPIRED, CANCELLED (отказ/возврат), EXHAUSTED (все PER_PERIOD-квоты потрачены).
+     * ACTIVE, EXPIRED, CANCELLED (отказ/возврат), REPLACED (пользователь купил другую
+     * подписку взамен этой, см. SubscriptionActivationService).
+     * EXHAUSTED — исторический: так помечались подписки с полностью потраченными
+     * PER_PERIOD-квотами, пока действовало досрочное закрытие. Больше не проставляется —
+     * оплаченный период живёт до expires_at независимо от остатка Лимитов.
      * Плюс для автопродления (см. SubscriptionRenewalScheduler): RENEWAL_PENDING (в процессе
      * списания, ждём вебхук), SUSPENDED (списание не удалось, идут ретраи — доступ к Лимитам
      * приостановлен, п. 6.13.2), RENEWED (успешно продлена, историческая запись — актуальная
@@ -139,6 +143,16 @@ public class Subscription {
      */
     @Column(name = "last_renewal_attempt_at")
     private OffsetDateTime lastRenewalAttemptAt;
+
+    /**
+     * Когда пользователю сообщили, что Лимиты подписки закончились. NULL — не сообщали.
+     * <p>
+     * Защита от повторов: состояние «всё потрачено» наступает при каждой следующей попытке
+     * списать Лимит, а сообщение должно уйти один раз за период. При автопродлении создаётся
+     * новая строка, где поле пустое — в новом периоде уведомим заново.
+     */
+    @Column(name = "quotas_exhausted_notified_at")
+    private OffsetDateTime quotasExhaustedNotifiedAt;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;

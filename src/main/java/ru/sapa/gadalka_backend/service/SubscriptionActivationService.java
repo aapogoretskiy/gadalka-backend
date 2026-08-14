@@ -10,6 +10,7 @@ import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlanQuota;
 import ru.sapa.gadalka_backend.domain.SubscriptionQuota;
 import ru.sapa.gadalka_backend.domain.type.ConsentAction;
+import ru.sapa.gadalka_backend.domain.type.ConsentRevokeReason;
 import ru.sapa.gadalka_backend.domain.type.QuotaPeriod;
 import ru.sapa.gadalka_backend.repository.SubscriptionAutorenewConsentLogRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionPlanQuotaRepository;
@@ -36,6 +37,7 @@ public class SubscriptionActivationService {
     private final SubscriptionPlanQuotaRepository planQuotaRepository;
     private final SubscriptionQuotaRepository quotaRepository;
     private final SubscriptionAutorenewConsentLogRepository consentLogRepository;
+    private final AutoRenewRevocationService autoRenewRevocationService;
 
     /**
      * Создаёт подписку и СНАПШОТ её квот из плана.
@@ -44,10 +46,9 @@ public class SubscriptionActivationService {
      * покупки, поэтому последующее редактирование плана в админке не меняет условия
      * уже купленной подписки (тот же принцип, что payments.credits_to_grant).
      * <p>
-     * Бизнес-правило «одна активная подписка» проверяется при СОЗДАНИИ платежа.
-     * Если к моменту webhook'а активная подписка всё же есть (гонка двух оплат) —
-     * активируем всё равно: деньги уже списаны, отказ здесь хуже двойной подписки.
-     * findActiveByUserId вернёт ту, что истекает позже.
+     * Бизнес-правило «одна активная подписка» проверяется при СОЗДАНИИ платежа, причём
+     * покупка при действующей подписке разрешена, если её Лимиты полностью исчерпаны.
+     * Такая покупка ЗАМЕНЯЕТ текущую подписку — см. {@link #replacePreviousSubscription}.
      */
     @Transactional
     public void activateFromPayment(Payment payment) {
@@ -56,10 +57,12 @@ public class SubscriptionActivationService {
                         "План подписки не найден при активации: planId=" + payment.getSubscriptionPlanId()
                                 + ", paymentId=" + payment.getId()));
 
-        subscriptionRepository.findActiveByUserId(payment.getUserId(), OffsetDateTime.now())
-                .ifPresent(existing -> log.warn(
-                        "Активация подписки при уже существующей активной: userId={}, existingSubId={}, paymentId={}",
-                        payment.getUserId(), existing.getId(), payment.getId()));
+        // Автопродление сюда не попадает: там продлеваемая подписка закрывается статусом
+        // RENEWED в конце этого же метода, а не заменяется.
+        if (payment.getRenewalOfSubscriptionId() == null) {
+            subscriptionRepository.findActiveByUserId(payment.getUserId(), OffsetDateTime.now())
+                    .ifPresent(existing -> replacePreviousSubscription(existing, payment));
+        }
 
         // Если это автопродление — подтягиваем продлеваемую подписку один раз и переиспользуем
         // и для расчёта периода, и для наследования autoRenewEnabled/rootPaymentId/lockedPriceRub.
@@ -118,6 +121,33 @@ public class SubscriptionActivationService {
         log.info("Подписка активирована: subscriptionId={}, userId={}, plan='{}' (planId={}), до {}, квот: {}, autoRenew={}",
                 subscription.getId(), payment.getUserId(), plan.getName(), plan.getId(),
                 subscription.getExpiresAt(), planQuotas.size(), subscription.getAutoRenewEnabled());
+    }
+
+    /**
+     * Закрывает подписку, взамен которой пользователь купил новую.
+     * <p>
+     * Сюда попадают только те случаи, когда покупка при действующей подписке вообще была
+     * разрешена — то есть её Лимиты исчерпаны полностью (проверка в
+     * {@code SubscriptionController#createSubscriptionPayment}). Оставшийся срок старой
+     * подписки не переносится и не компенсируется, о чём пользователя предупреждает экран
+     * оплаты.
+     * <p>
+     * Замена выполняется именно здесь, при активации, а НЕ при создании платежа: иначе
+     * незавершённая попытка оплаты убила бы действующую подписку. Деньги пришли — только
+     * тогда меняем.
+     * <p>
+     * Согласие на автопродление старой подписки обязательно отзываем: иначе на закрытой
+     * строке остался бы поднятый флаг, который шедулер уже не обработает
+     * (см. {@link AutoRenewRevocationService}).
+     */
+    private void replacePreviousSubscription(Subscription existing, Payment payment) {
+        existing.setStatus("REPLACED");
+        existing.setCancelledAt(OffsetDateTime.now());
+        subscriptionRepository.save(existing);
+        autoRenewRevocationService.revoke(existing, ConsentRevokeReason.SUBSCRIPTION_REPLACED);
+
+        log.info("Подписка заменена новой покупкой: replacedSubscriptionId={}, userId={}, paymentId={}",
+                existing.getId(), payment.getUserId(), payment.getId());
     }
 
     /**

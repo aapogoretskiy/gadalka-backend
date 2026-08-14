@@ -20,6 +20,7 @@ import ru.sapa.gadalka_backend.api.dto.subscription.MySubscriptionResponse;
 import ru.sapa.gadalka_backend.api.dto.subscription.SubscriptionPlanDto;
 import ru.sapa.gadalka_backend.configuration.AdminProperties;
 import ru.sapa.gadalka_backend.constant.SystemConfigConstants;
+import ru.sapa.gadalka_backend.domain.Subscription;
 import ru.sapa.gadalka_backend.domain.SubscriptionPlan;
 import ru.sapa.gadalka_backend.domain.User;
 import ru.sapa.gadalka_backend.domain.type.PaymentProvider;
@@ -101,10 +102,18 @@ public class SubscriptionController extends BaseController {
                 .getActivePlan(body.planId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "План подписки не найден"));
 
-        // SUSPENDED тоже блокируем: пока идут автоматические ретраи неудачного списания
-        // (см. SubscriptionRenewalScheduler), параллельная ручная покупка рискует привести
-        // к двойному списанию, если один из ретраев внезапно пройдёт успешно.
-        if (subscriptionQuotaService.findActiveSubscription(user.getId()).isPresent() || subscriptionRepository.existsByUserIdAndStatus(user.getId(), "SUSPENDED")) {
+        // Слот «одной подписки» держим занятым, пока в действующей подписке ещё остались
+        // Лимиты. Если они исчерпаны полностью — разрешаем купить новую: терять пользователю
+        // уже нечего, а новая ЗАМЕНИТ текущую в момент активации (SubscriptionActivationService).
+        // Оставшийся срок старой при этом сгорает, поэтому экран оплаты обязан предупредить об
+        // этом явно — фронт узнаёт о такой возможности по MySubscriptionResponse.quotasExhausted.
+        //
+        // SUSPENDED блокируем всегда, независимо от Лимитов: там идут автоматические ретраи
+        // неудачного списания (см. SubscriptionRenewalScheduler), и параллельная ручная покупка
+        // рискует привести к двойному списанию, если один из ретраев внезапно пройдёт успешно.
+        Subscription active = subscriptionQuotaService.findActiveSubscription(user.getId()).orElse(null);
+        boolean blockedByActive = active != null && !subscriptionQuotaService.isFullyExhausted(active.getId());
+        if (blockedByActive || subscriptionRepository.existsByUserIdAndStatus(user.getId(), "SUSPENDED")) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "У вас уже есть активная подписка. Новую можно оформить после её окончания.");
         }
 

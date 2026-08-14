@@ -497,11 +497,12 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
 
     /** Кнопка, открывающая Mini App сразу на экране профиля (управление подпиской). */
     /**
-     * Сообщает, что подписка закрыта досрочно — все включённые в неё разборы потрачены
-     * (см. {@code SubscriptionExhaustedNotifier}). Текст формирует вызывающая сторона:
-     * то же самое сообщение уходит и во «Входящие» внутри приложения, только без Markdown.
+     * Сообщает, что в подписке закончились Лимиты — при этом сама подписка продолжает
+     * действовать до конца оплаченного периода (см. {@code SubscriptionQuotasExhaustedNotifier}).
+     * Текст формирует вызывающая сторона: то же самое сообщение уходит и во «Входящие»
+     * внутри приложения, только без Markdown.
      */
-    public void sendSubscriptionExhaustedNotice(Long telegramId, String text) {
+    public void sendQuotasExhaustedNotice(Long telegramId, String text) {
         SendMessage message = SendMessage.builder()
                 .chatId(telegramId)
                 .text(text)
@@ -511,9 +512,9 @@ public class GadalkaTelegramBot implements SpringLongPollingBot, LongPollingSing
 
         try {
             telegramClient.execute(message);
-            log.info("Уведомление об исчерпанной подписке отправлено: telegramId={}", telegramId);
+            log.info("Уведомление об исчерпании Лимитов отправлено: telegramId={}", telegramId);
         } catch (TelegramApiException e) {
-            log.warn("Не удалось отправить уведомление об исчерпанной подписке: telegramId={}, error={}",
+            log.warn("Не удалось отправить уведомление об исчерпании Лимитов: telegramId={}, error={}",
                     telegramId, e.getMessage());
         }
     }

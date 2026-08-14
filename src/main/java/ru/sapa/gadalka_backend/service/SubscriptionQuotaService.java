@@ -7,13 +7,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sapa.gadalka_backend.domain.Subscription;
 import ru.sapa.gadalka_backend.domain.SubscriptionQuota;
-import ru.sapa.gadalka_backend.domain.type.ConsentRevokeReason;
 import ru.sapa.gadalka_backend.domain.type.DiaryFeatureType;
 import ru.sapa.gadalka_backend.domain.type.QuotaPeriod;
 import ru.sapa.gadalka_backend.exception.QuotaExceededException;
 import ru.sapa.gadalka_backend.repository.SubscriptionQuotaRepository;
 import ru.sapa.gadalka_backend.repository.SubscriptionRepository;
-import ru.sapa.gadalka_backend.service.event.SubscriptionExhaustedEvent;
+import ru.sapa.gadalka_backend.service.event.SubscriptionQuotasExhaustedEvent;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -41,7 +40,6 @@ public class SubscriptionQuotaService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionQuotaRepository quotaRepository;
-    private final AutoRenewRevocationService autoRenewRevocationService;
     private final ApplicationEventPublisher eventPublisher;
 
     /**
@@ -122,47 +120,87 @@ public class SubscriptionQuotaService {
 
         log.info("Списана квота подписки: userId={}, subscriptionId={}, feature={}, использовано {}/{}", userId, subscription.getId(), featureType, quota.getUsedCount(), quota.getQuotaCount());
 
-        completeIfFullyExhausted(subscription);
+        notifyIfFullyExhausted(subscription);
     }
 
     /**
-     * Досрочное завершение полностью исчерпанной подписки.
+     * Сообщает пользователю, что Лимиты подписки закончились. Саму подписку НЕ трогает.
      * <p>
-     * Срабатывает ТОЛЬКО если у подписки все квоты PER_PERIOD (нет ни дневных,
-     * ни безлимитных — те пополняются каждый день, закрывать их подписку нельзя)
-     * и все потрачены до нуля. Пользователю в подписке больше нечего получать —
-     * освобождаем слот «одной подписки», чтобы он мог сразу купить новую
-     * (не дожидаясь expires_at и без ручного отказа в профиле).
+     * Раньше здесь было досрочное закрытие: подписка уходила в EXHAUSTED, слот «одной
+     * подписки» освобождался. От этого отказались — оплаченный период должен жить до
+     * expires_at, а при включённом автопродлении продлеваться, обновляя Лимиты. Вместо
+     * закрытия пользователь получает сообщение и сам решает: продолжить за знаки или
+     * оформить другую подписку взамен текущей (покупку разрешает
+     * {@code SubscriptionController#createSubscriptionPayment}, замену выполняет
+     * {@code SubscriptionActivationService}).
      * <p>
-     * Вместе с подпиской обязательно гасим автопродление: шедулер продлевает только
-     * ACTIVE/SUSPENDED, поэтому у закрытой подписки автопродление всё равно уже не
-     * сработает — но горящий флаг создавал бы у пользователя ощущение, что подписка
-     * продлится сама, и оставлял бы в журнале действующее согласие на списания.
+     * Уведомляем один раз за расчётный период: состояние «всё потрачено» наступает при
+     * каждой следующей попытке списать Лимит, а сообщение нужно одно.
      * <p>
-     * Вызывается в той же транзакции, что и списание последней квоты — поэтому
-     * уведомление пользователю уходит не отсюда, а событием после коммита
-     * (см. {@link SubscriptionExhaustedEvent}).
+     * Вызывается в той же транзакции, что и списание последнего Лимита — поэтому само
+     * уведомление уходит не отсюда, а событием после коммита
+     * (см. {@link SubscriptionQuotasExhaustedEvent}).
      */
-    private void completeIfFullyExhausted(Subscription subscription) {
-        List<SubscriptionQuota> quotas = quotaRepository.findAllBySubscriptionId(subscription.getId());
-        if (quotas.isEmpty()) return;
+    private void notifyIfFullyExhausted(Subscription subscription) {
+        if (subscription.getQuotasExhaustedNotifiedAt() != null) return;
+        // Вызов через this — прокси в обход, поэтому @Transactional на isFullyExhausted здесь
+        // не действует. Это не ошибка: транзакция уже открыта снаружи (consumeQuota помечен
+        // @Transactional и вызывается через прокси), чтение идёт в ней. Подробнее — в javadoc
+        // самого isFullyExhausted.
+        if (!isFullyExhausted(subscription.getId())) return;
+
+        subscription.setQuotasExhaustedNotifiedAt(OffsetDateTime.now());
+        subscriptionRepository.save(subscription);
+
+        log.info("Лимиты подписки полностью исчерпаны: subscriptionId={}, userId={}, plan='{}', период до {}",
+                subscription.getId(), subscription.getUserId(), subscription.getPlanName(), subscription.getExpiresAt());
+
+        eventPublisher.publishEvent(new SubscriptionQuotasExhaustedEvent(
+                subscription.getUserId(),
+                subscription.getId(),
+                subscription.getPlanName(),
+                subscription.getExpiresAt(),
+                Boolean.TRUE.equals(subscription.getAutoRenewEnabled())));
+    }
+
+    /**
+     * Исчерпаны ли Лимиты подписки безвозвратно до конца оплаченного периода.
+     * <p>
+     * true ТОЛЬКО если все квоты плана — PER_PERIOD и среди них нет безлимитных: дневные
+     * и безлимитные восстанавливаются каждый день, их «ноль» — это состояние на сегодня,
+     * а не конец Лимитов. Поэтому план хотя бы с одной DAILY-квотой исчерпанным не
+     * считается никогда.
+     * <p>
+     * Используется дважды: для одноразового уведомления и для разрешения купить новую
+     * подписку взамен текущей (см. {@code SubscriptionController}).
+     * <p>
+     * <b>Про {@code @Transactional} здесь — чтобы не спотыкаться повторно.</b> Аннотация
+     * работает только для вызовов ИЗВНЕ бина: из {@code SubscriptionController} (он не
+     * транзакционный, поэтому прокси откроет новую read-only транзакцию) и из
+     * {@code SubscriptionCatalogService} (там присоединится к существующей). Вызов из
+     * соседнего {@link #notifyIfFullyExhausted} идёт через {@code this}, минует прокси, и
+     * аннотация игнорируется — но транзакция там уже открыта снаружи (см. {@code consumeQuota}),
+     * так что чтение всё равно выполняется в ней.
+     * <p>
+     * Причём даже сработай прокси в том пути, {@code readOnly = true} ничего бы не изменил:
+     * при propagation REQUIRED присоединение к существующей транзакции её флаг readOnly
+     * не переопределяет — он учитывается только при создании транзакции с нуля.
+     * <p>
+     * Оставлено как есть сознательно. Если однажды захочется убрать сам повод для вопроса —
+     * вынести проверку в приватный метод, принимающий уже загруженный список квот, и звать
+     * его из обоих мест; тогда self-invocation исчезнет, а аннотация останется только там,
+     * где реально управляет транзакцией.
+     */
+    @Transactional(readOnly = true)
+    public boolean isFullyExhausted(Long subscriptionId) {
+        List<SubscriptionQuota> quotas = quotaRepository.findAllBySubscriptionId(subscriptionId);
+        if (quotas.isEmpty()) return false;
 
         boolean onlyPerPeriod = quotas.stream().allMatch(q ->
                 q.getQuotaPeriod() == QuotaPeriod.PER_PERIOD && !Boolean.TRUE.equals(q.getIsUnlimited()));
-        if (!onlyPerPeriod) return;
+        if (!onlyPerPeriod) return false;
 
-        boolean allSpent = quotas.stream().allMatch(q -> q.getUsedCount() >= q.getQuotaCount());
-        if (!allSpent) return;
-
-        subscription.setStatus("EXHAUSTED");
-        subscription.setCancelledAt(OffsetDateTime.now());
-        boolean autoRenewWasEnabled = autoRenewRevocationService.revoke(subscription, ConsentRevokeReason.SUBSCRIPTION_EXHAUSTED);
-        subscriptionRepository.save(subscription);
-
-        log.info("Подписка полностью исчерпана и завершена досрочно: subscriptionId={}, userId={}, plan='{}', автопродление было включено={}",
-                subscription.getId(), subscription.getUserId(), subscription.getPlanName(), autoRenewWasEnabled);
-
-        eventPublisher.publishEvent(new SubscriptionExhaustedEvent(subscription.getUserId(), subscription.getId(), subscription.getPlanName(), autoRenewWasEnabled));
+        return quotas.stream().allMatch(q -> q.getUsedCount() >= q.getQuotaCount());
     }
 
     private QuotaState toState(SubscriptionQuota quota) {

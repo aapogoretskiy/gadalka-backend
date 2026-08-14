@@ -13,8 +13,15 @@ public enum ConsentRevokeReason {
     /** Пользователь сам выключил автопродление в профиле (п. 6.15.1 соглашения) */
     USER_REQUEST,
 
-    /** Все квоты PER_PERIOD потрачены, подписка закрыта досрочно (см. SubscriptionQuotaService) */
+    /**
+     * Исторический: так отзывалось согласие при досрочном закрытии полностью исчерпанной
+     * подписки. Досрочного закрытия больше нет — оплаченный период живёт до конца срока,
+     * а исчерпание Лимитов автопродления не отменяет. В новых записях не встречается.
+     */
     SUBSCRIPTION_EXHAUSTED,
+
+    /** Пользователь купил другую подписку взамен текущей (см. SubscriptionActivationService) */
+    SUBSCRIPTION_REPLACED,
 
     /** Пользователь отказался от подписки целиком (см. SubscriptionCancellationService#cancelByUser) */
     SUBSCRIPTION_CANCELLED,
