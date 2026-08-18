@@ -5,11 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import ru.sapa.gadalka_backend.api.dto.ai.AiMessage;
+import ru.sapa.gadalka_backend.api.dto.ai.AiReasoning;
 import ru.sapa.gadalka_backend.api.dto.ai.AiRequest;
 import ru.sapa.gadalka_backend.api.dto.ai.AiResponse;
 import ru.sapa.gadalka_backend.api.dto.card.CardDto;
@@ -54,6 +56,25 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
     @Autowired
     @Qualifier("aiTaskExecutor")
     private Executor aiTaskExecutor;
+
+    /**
+     * Режим «токенов мыслей» для творческих генераций — интерпретаций расклада
+     * и совместимости (см. {@link #callAiCreative}).
+     * <p>
+     * По умолчанию "none": рассуждения там не нужны (это генерация текста в заданном
+     * стиле, а не пошаговый вывод), а стоят они и денег, и времени — реальный случай
+     * с прода: карточный вызов израсходовал все 550 токенов на рассуждения и вернул
+     * пустой текст, после чего пришлось делать повторный запрос на 2200 токенов.
+     * <p>
+     * Классификацию чувствительного контента и генерацию JSON (сонник, гороскоп)
+     * это НЕ затрагивает — там рассуждения полезны и остаются включёнными.
+     * <p>
+     * Пустое значение = поле в запрос не добавляется, поведение провайдера по умолчанию.
+     * Это же и способ быстрого отката: AI_REASONING_EFFORT= и перезапуск контейнера,
+     * без пересборки образа.
+     */
+    @Value("${ai.reasoning-effort:}")
+    private String creativeReasoningEffort;
 
     /**
      * Убираем возможность prompt injection в пользовательском вводе.
@@ -120,10 +141,10 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                     """;
 
     /** Лимит токенов для общей интерпретации расклада */
-    private static final int MAX_TOKENS_GENERAL = 900;
+    private static final int MAX_TOKENS_GENERAL = 1200;
 
     /** Лимит токенов для интерпретации одной карты */
-    private static final int MAX_TOKENS_CARD = 550;
+    private static final int MAX_TOKENS_CARD = 800;
 
     /** Лимит токенов для гороскопа на день (5 текстовых разделов + 4 рейтинга) */
     private static final int MAX_TOKENS_HOROSCOPE = 650;
@@ -200,7 +221,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
         // Общая интерпретация расклада не зависит от интерпретаций отдельных карт:
         // она строится по всему набору карт сразу. Поэтому запускаем её в пуле, а не ждём
         CompletableFuture<String> generalFuture = CompletableFuture.supplyAsync(() ->
-                callAi(buildGeneralPrompt(cards, question, categoryContext),
+                callAiCreative(buildGeneralPrompt(cards, question, categoryContext),
                         "Ты мистический таролог. Интерпретируй расклад таро очень кратко — не более 3-4 предложений суммарно. " +
                         "Пиши атмосферно, строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
                         "Называй позиции карт только по-русски: Прошлое, Настоящее, Будущее — никогда не пиши PAST, PRESENT, FUTURE. " +
@@ -217,7 +238,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
         // Число запросов к провайдеру и расход токенов при этом не меняются.
         List<CompletableFuture<CardDto>> cardFutures = cards.stream()
                 .map(card -> CompletableFuture.supplyAsync(() -> {
-                    String cardInterpretation = callAi(buildCardPrompt(card, question, categoryContext),
+                    String cardInterpretation = callAiCreative(buildCardPrompt(card, question, categoryContext),
                             "Ты мистический таролог. Дай очень краткую интерпретацию одной карты таро — 1-2 предложения. " +
                             "Строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
                             "Называй позицию карты только по-русски: Прошлое, Настоящее или Будущее.",
@@ -248,7 +269,7 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
     public String interpretCompatibility(List<CompatibilityRequest.PersonInput> persons,
                                          int overallScore,
                                          List<CompatibilityCategoryScore> categories) {
-        return callAi(
+        return callAiCreative(
                 buildCompatibilityPrompt(persons, overallScore, categories),
                 "Ты мистический нумеролог. Дай короткую атмосферную интерпретацию совместимости двух людей — " +
                 "не более 2-3 предложений. Опирайся на числа и имена. " +
@@ -760,7 +781,21 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
      * фразу, обрывающуюся на полуслове.
      */
     private String callAi(String userPrompt, String systemPrompt, int maxTokens) {
-        return callAi(userPrompt, systemPrompt, SENSITIVITY_RULES, maxTokens);
+        return callAi(userPrompt, systemPrompt, SENSITIVITY_RULES, maxTokens, null);
+    }
+
+    /**
+     * Вариант для творческой генерации: интерпретации расклада и совместимости.
+     * Отличается только тем, что в запрос добавляется настройка рассуждений
+     * из {@link #creativeReasoningEffort} — по умолчанию они отключены.
+     */
+    private String callAiCreative(String userPrompt, String systemPrompt, int maxTokens) {
+        return callAi(userPrompt, systemPrompt, SENSITIVITY_RULES, maxTokens, resolveCreativeReasoning());
+    }
+
+    /** Пустая настройка = не отправлять поле вообще (поведение провайдера по умолчанию). */
+    private AiReasoning resolveCreativeReasoning() {
+        return StringUtils.isBlank(creativeReasoningEffort) ? null : new AiReasoning(creativeReasoningEffort);
     }
 
     /**
@@ -769,10 +804,15 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
      * все остальные фичи — стандартные {@link #SENSITIVITY_RULES}.
      */
     private String callAi(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens) {
+        return callAi(userPrompt, systemPrompt, sensitivityRules, maxTokens, null);
+    }
+
+    private String callAi(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens,
+                          AiReasoning reasoning) {
         String content = StringUtils.EMPTY;
         int currentMaxTokens = maxTokens;
         for (int attempt = 1; attempt <= TRUNCATION_MAX_ATTEMPTS; attempt++) {
-            AiCallResult result = callAiRaw(userPrompt, systemPrompt, sensitivityRules, currentMaxTokens);
+            AiCallResult result = callAiRaw(userPrompt, systemPrompt, sensitivityRules, currentMaxTokens, reasoning);
             content = result.content();
             if (!"length".equals(result.finishReason())) {
                 return content;
@@ -786,7 +826,8 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
 
     private record AiCallResult(String content, String finishReason) {}
 
-    private AiCallResult callAiRaw(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens) {
+    private AiCallResult callAiRaw(String userPrompt, String systemPrompt, String sensitivityRules, int maxTokens,
+                                   AiReasoning reasoning) {
         String model = getModel();
         log.debug("Отправляем запрос к {} AI, модель='{}', maxTokens={}, промпт: {}",
                 getProvider(), model, maxTokens, userPrompt.length() > 100 ? userPrompt.substring(0, 100) + "…" : userPrompt);
@@ -797,7 +838,8 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                         new AiMessage("system", ANTI_INJECTION_PREFIX + sensitivityRules + systemPrompt),
                         new AiMessage("user", userPrompt)
                 ),
-                maxTokens
+                maxTokens,
+                reasoning
         );
 
         AiResponse response;

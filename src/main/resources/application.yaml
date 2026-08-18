@@ -100,6 +100,15 @@ openrouter:
   url: https://openrouter.ai/api/v1/chat/completions
   model: openai/gpt-4o-mini
 
+# Режим «токенов мыслей» для творческих генераций (интерпретации расклада, совместимость).
+# none — рассуждения отключены: для генерации текста в заданном стиле они не нужны,
+# но расходуют токены (оплачиваются) и время. Классификации чувствительного контента
+# и JSON-разборов (сонник, гороскоп) это НЕ касается — там рассуждения остаются.
+# Пустое значение (AI_REASONING_EFFORT=) — вернуть поведение провайдера по умолчанию
+# без пересборки образа.
+ai:
+  reasoning-effort: ${AI_REASONING_EFFORT:none}
+
 aitunnel:
   api-key: ${AITUNNEL_API_KEY}
   url: https://api.aitunnel.ru/v1/chat/completions
