@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -23,9 +25,13 @@ import ru.sapa.gadalka_backend.service.interpretation.HoroscopeContent;
 import ru.sapa.gadalka_backend.service.interpretation.HoroscopeGenerationException;
 import ru.sapa.gadalka_backend.service.interpretation.InterpretationResult;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 /**
  * Базовая реализация для всех AI-провайдеров, совместимых с форматом OpenAI Chat Completions
@@ -35,6 +41,19 @@ import java.util.List;
  */
 @Slf4j
 public abstract class OpenAiCompatibleInterpretationService implements AiInterpretationService {
+
+    /**
+     * Пул для параллельных вызовов LLM (см. {@link #interpret}).
+     * <p>
+     * Внедряется через поле, а не через конструктор, намеренно: наследники
+     * ({@code AiTunnelInterpretationService}, {@code OpenAiInterpretationService})
+     * используют ломбоковский {@code @RequiredArgsConstructor}, который не умеет
+     * передавать аргументы в конструктор родителя — пришлось бы писать конструкторы
+     * в каждом наследнике руками.
+     */
+    @Autowired
+    @Qualifier("aiTaskExecutor")
+    private Executor aiTaskExecutor;
 
     /**
      * Убираем возможность prompt injection в пользовательском вводе.
@@ -118,6 +137,16 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
     /** Попытки получить валидный JSON разбора сна — та же логика, что и у гороскопа. */
     private static final int DREAM_MAX_ATTEMPTS = 3;
 
+    /**
+     * Потолок суммарного времени на разбор сна со всеми повторами.
+     * <p>
+     * Каждая неудачная попытка (модель вернула невалидный JSON) — это ещё один
+     * полный вызов LLM. Замер с прода: разбор сна занимал 89 секунд, к этому моменту
+     * фронт давно оборвал соединение, а поток продолжал работать вхолостую.
+     * Теперь новая попытка не начинается, если бюджет уже исчерпан.
+     */
+    private static final Duration DREAM_TOTAL_BUDGET = Duration.ofSeconds(60);
+
     /** Заглушка для отдельной незаполненной секции разбора сна. */
     private static final String DREAM_FIELD_FALLBACK = "Сон не раскрыл эту грань — прислушайтесь к своим ощущениям.";
 
@@ -176,8 +205,14 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                 "Никаких длинных объяснений — только суть.",
                 MAX_TOKENS_GENERAL);
 
-        List<CardDto> cardsWithInterpretation = cards.stream()
-                .map(card -> {
+        // Интерпретации отдельных карт не зависят друг от друга, поэтому запускаем их
+        // одновременно на общем AI-пуле. Раньше здесь был обычный stream(), то есть
+        // строго последовательные вызовы: для «Кельтского креста» это 10 обращений
+        // к модели подряд и больше минуты ожидания (замер с прода — 62 секунды).
+        // Теперь время расклада равно самому долгому одиночному вызову, а не их сумме.
+        // Число запросов к провайдеру и расход токенов при этом не меняются.
+        List<CompletableFuture<CardDto>> cardFutures = cards.stream()
+                .map(card -> CompletableFuture.supplyAsync(() -> {
                     String cardInterpretation = callAi(buildCardPrompt(card, question, categoryContext),
                             "Ты мистический таролог. Дай очень краткую интерпретацию одной карты таро — 1-2 предложения. " +
                             "Строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
@@ -191,7 +226,13 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                             .interpretation(cardInterpretation)
                             .imageUrl(card.getImageUrl())
                             .build();
-                })
+                }, aiTaskExecutor))
+                .toList();
+
+        // Собираем результат строго в порядке исходного списка, а не по мере готовности:
+        // позиция карты в раскладе имеет смысл (Прошлое / Настоящее / Будущее), перепутать нельзя.
+        List<CardDto> cardsWithInterpretation = cardFutures.stream()
+                .map(this::unwrapJoin)
                 .toList();
 
         return new InterpretationResult(generalInterpretation, cardsWithInterpretation);
@@ -272,7 +313,17 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                         Ответ — только валидный JSON, без markdown, без пояснений, без обёртки в ```.""";
 
         Exception lastError = null;
+        long startedAt = System.currentTimeMillis();
         for (int attempt = 1; attempt <= DREAM_MAX_ATTEMPTS; attempt++) {
+            // Перед КАЖДОЙ повторной попыткой проверяем, остался ли смысл её начинать:
+            // если бюджет исчерпан, пользователь всё равно уже не дождётся ответа,
+            // а поток и деньги на токены будут потрачены впустую.
+            long elapsedMs = System.currentTimeMillis() - startedAt;
+            if (attempt > 1 && elapsedMs > DREAM_TOTAL_BUDGET.toMillis()) {
+                log.warn("Разбор сна прерван по бюджету времени: попыток сделано {}, прошло {} мс (лимит {} мс)",
+                        attempt - 1, elapsedMs, DREAM_TOTAL_BUDGET.toMillis());
+                break;
+            }
             String raw = null;
             try {
                 raw = callAi(userPrompt, systemPrompt, DREAM_SENSITIVITY_RULES, MAX_TOKENS_DREAM);
@@ -497,6 +548,29 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
         }
         sb.append("\nНапиши короткую мистическую интерпретацию этого союза.");
         return sb.toString();
+    }
+
+    /**
+     * {@code CompletableFuture.join()} заворачивает любое исключение из задачи в
+     * {@link CompletionException}. Если его не развернуть, наверх уйдёт не наш
+     * {@code DreamRefusedException} или {@code SensitiveContentBlockedException},
+     * а обёртка — и обработчики в GlobalExceptionHandler перестанут их узнавать,
+     * превращая осмысленные 422 в невнятные 500. Тот же приём уже применяется
+     * в {@code FortuneService#unwrapJoin}.
+     */
+    private <T> T unwrapJoin(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw ex;
+        }
     }
 
     private String buildGeneralPrompt(List<CardDto> cards, String question, String categoryContext) {
