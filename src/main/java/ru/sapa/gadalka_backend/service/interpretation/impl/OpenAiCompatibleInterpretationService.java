@@ -197,13 +197,17 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
     public InterpretationResult interpret(List<CardDto> cards, String question, String category) {
         String categoryContext = resolveCategoryContext(category);
 
-        String generalInterpretation = callAi(buildGeneralPrompt(cards, question, categoryContext),
-                "Ты мистический таролог. Интерпретируй расклад таро очень кратко — не более 3-4 предложений суммарно. " +
-                "Пиши атмосферно, строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
-                "Называй позиции карт только по-русски: Прошлое, Настоящее, Будущее — никогда не пиши PAST, PRESENT, FUTURE. " +
-                "Так же все ответы должны быть только на русском языке" +
-                "Никаких длинных объяснений — только суть.",
-                MAX_TOKENS_GENERAL);
+        // Общая интерпретация расклада не зависит от интерпретаций отдельных карт:
+        // она строится по всему набору карт сразу. Поэтому запускаем её в пуле, а не ждём
+        CompletableFuture<String> generalFuture = CompletableFuture.supplyAsync(() ->
+                callAi(buildGeneralPrompt(cards, question, categoryContext),
+                        "Ты мистический таролог. Интерпретируй расклад таро очень кратко — не более 3-4 предложений суммарно. " +
+                        "Пиши атмосферно, строго в контексте вопроса пользователя. Не используй markdown или другие спецсимволы. " +
+                        "Называй позиции карт только по-русски: Прошлое, Настоящее, Будущее — никогда не пиши PAST, PRESENT, FUTURE. " +
+                        "Так же все ответы должны быть только на русском языке" +
+                        "Никаких длинных объяснений — только суть.",
+                        MAX_TOKENS_GENERAL),
+                aiTaskExecutor);
 
         // Интерпретации отдельных карт не зависят друг от друга, поэтому запускаем их
         // одновременно на общем AI-пуле. Раньше здесь был обычный stream(), то есть
@@ -229,8 +233,10 @@ public abstract class OpenAiCompatibleInterpretationService implements AiInterpr
                 }, aiTaskExecutor))
                 .toList();
 
-        // Собираем результат строго в порядке исходного списка, а не по мере готовности:
-        // позиция карты в раскладе имеет смысл (Прошлое / Настоящее / Будущее), перепутать нельзя.
+        // Дожидаемся всех результатов. Карты собираем строго в порядке исходного списка,
+        // а не по мере готовности: позиция карты в раскладе имеет смысл
+        // (Прошлое / Настоящее / Будущее), перепутать нельзя.
+        String generalInterpretation = unwrapJoin(generalFuture);
         List<CardDto> cardsWithInterpretation = cardFutures.stream()
                 .map(this::unwrapJoin)
                 .toList();

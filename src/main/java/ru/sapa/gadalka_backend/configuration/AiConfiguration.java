@@ -26,7 +26,7 @@ public class AiConfiguration {
      * Важно, чтобы значение было меньше клиентского таймаута фронта (90с) — тогда
      * пользователь получает осмысленную ошибку от нас, а не обрыв соединения.
      */
-    private static final Duration AI_RESPONSE_TIMEOUT = Duration.ofSeconds(45);
+    private static final Duration AI_RESPONSE_TIMEOUT = Duration.ofSeconds(60);
 
     /** Таймаут установки TCP-соединения — отдельно от ожидания ответа. */
     private static final int AI_CONNECT_TIMEOUT_MS = 10_000;
