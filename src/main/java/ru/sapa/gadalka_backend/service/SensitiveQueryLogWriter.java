@@ -36,9 +36,16 @@ public class SensitiveQueryLogWriter {
 
     private final SensitiveQueryLogRepository sensitiveQueryLogRepository;
 
+    /**
+     * @param blocked была ли реально заблокирована выдача пользователю. {@code false}
+     *                означает «случай зафиксирован для разбора, но человек получил ответ» —
+     *                так логируются отказы генерирующей модели, не подтверждённые
+     *                классификатором.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SensitiveQueryLog save(Long userId, String question, SensitiveContentCategory category,
-                                   DetectionSource source, String rawClassificationOutput, String explanation) {
+                                   DetectionSource source, String rawClassificationOutput, String explanation,
+                                   boolean blocked) {
         SensitiveQueryLog saved = sensitiveQueryLogRepository.save(SensitiveQueryLog.builder()
                 .userId(userId)
                 .question(question)
@@ -46,8 +53,10 @@ public class SensitiveQueryLogWriter {
                 .source(source)
                 .rawClassificationOutput(rawClassificationOutput)
                 .explanation(explanation)
+                .blocked(blocked)
                 .build());
-        log.info("Залогирован чувствительный запрос: userId={}, category={}, source={}", userId, category, source);
+        log.info("Залогирован чувствительный запрос: userId={}, category={}, source={}, blocked={}",
+                userId, category, source, blocked);
         return saved;
     }
 
@@ -68,6 +77,7 @@ public class SensitiveQueryLogWriter {
                 .rawClassificationOutput(rawClassificationOutput)
                 .explanation(explanation)
                 .detectedAt(detectedAt)
+                .blocked(false)
                 .build());
         log.info("Бэкафилл: залогирован исторический чувствительный запрос: userId={}, category={}, source={}",
                 userId, category, source);

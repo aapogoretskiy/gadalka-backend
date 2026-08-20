@@ -73,6 +73,7 @@ public class UserSensitivityProfileService {
 
         // Технические метки не считаются подтверждённой категорией — см. javadoc класса
         List<SensitiveQueryLog> confirmed = logs.stream()
+                .filter(SensitiveQueryLog::isBlocked)
                 .filter(l -> l.getCategory() != SensitiveContentCategory.CLASSIFICATION_FAILED
                         && l.getCategory() != SensitiveContentCategory.LLM_REFUSED)
                 .toList();

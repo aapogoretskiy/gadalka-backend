@@ -227,8 +227,14 @@ public class SensitiveContentFilterService {
 
     /**
      * Классифицирует вопрос через дешёвый LLM-вызов.
-     * Вызывается только когда keyword-фильтр промахнулся, а LLM отказал.
+     * Вызывается только когда keyword-фильтр промахнулся, а LLM отказала на генерации.
      * Стоимость: ~200 входных + ~10 выходных токенов.
+     *
+     * <p>С августа 2026 умеет вернуть {@code NOT_SENSITIVE} — раньше такого варианта
+     * в промпте не было, из-за чего классификатор физически не мог оправдать вопрос:
+     * список заканчивался на {@code LLM_REFUSED}, и ЛЮБОЙ отказ генерирующей модели
+     * гарантированно превращался в блокировку пользователя
+     * Решение о блокировке принимается по {@link #isConfirmedBlockingCategory}.
      */
     public SensitiveContentCategory classifyByLlm(String question) {
         try {
@@ -239,6 +245,20 @@ public class SensitiveContentFilterService {
             log.warn("Не удалось классифицировать вопрос через LLM: {}", e.getMessage());
             return SensitiveContentCategory.LLM_REFUSED;
         }
+    }
+
+    /**
+     * Подтверждает ли категория реальную запрещённую тему — то есть можно ли на её
+     * основании отказать пользователю.
+     *
+     * <p>{@code NOT_SENSITIVE} — классификатор явно оправдал вопрос.
+     * {@code LLM_REFUSED} — «ни одна из запрещённых тем не подошла», то есть тоже
+     * НЕ основание для отказа: это техническая пометка, а не установленная тема.
+     * Всё остальное (9 реальных категорий и fail-closed {@code CLASSIFICATION_FAILED})
+     * блокирует.
+     */
+    public boolean isConfirmedBlockingCategory(SensitiveContentCategory category) {
+        return category != SensitiveContentCategory.NOT_SENSITIVE && category != SensitiveContentCategory.LLM_REFUSED;
     }
 
     /** Результат pre-check классификации: категория (в т.ч. NOT_SENSITIVE/CLASSIFICATION_FAILED) + сырой ответ при провале формата */
@@ -320,15 +340,14 @@ public class SensitiveContentFilterService {
      *
      * @return сохранённая запись (нужен id — для асинхронного дозаполнения explanation)
      */
-    public SensitiveQueryLog logSensitiveQuery(Long userId, String question, SensitiveContentCategory category,
-                                                DetectionSource source, String rawClassificationOutput, String explanation) {
-        return sensitiveQueryLogWriter.save(userId, question, category, source, rawClassificationOutput, explanation);
+    public SensitiveQueryLog logSensitiveQuery(Long userId, String question, SensitiveContentCategory category, DetectionSource source, String rawClassificationOutput, String explanation, boolean blocked) {
+        return sensitiveQueryLogWriter.save(userId, question, category, source, rawClassificationOutput, explanation, blocked);
     }
 
     /** Keyword-источник: explanation уже известен детерминированно (сработавшее слово), LLM не вызываем. */
     public SensitiveQueryLog logKeywordMatch(Long userId, String question, KeywordMatch match, DetectionSource source) {
         SensitiveQueryLog saved = logSensitiveQuery(userId, question, match.category(), source, null,
-                "Сработало ключевое слово: \"" + match.matchedTerm() + "\"");
+                "Сработало ключевое слово: \"" + match.matchedTerm() + "\"", true);
         userSensitivityProfileService.recomputeProfile(userId);
         return saved;
     }
@@ -369,9 +388,10 @@ public class SensitiveContentFilterService {
      * бессмысленно и ненадёжно.
      */
     public SensitiveQueryLog logLlmDetection(Long userId, String question, SensitiveContentCategory category,
-                                              DetectionSource source, String rawClassificationOutput) {
-        SensitiveQueryLog saved = logSensitiveQuery(userId, question, category, source, rawClassificationOutput, null);
-        if (category != SensitiveContentCategory.CLASSIFICATION_FAILED) {
+                                              DetectionSource source, String rawClassificationOutput, boolean blocked) {
+        SensitiveQueryLog saved = logSensitiveQuery(userId, question, category, source, rawClassificationOutput, null, blocked);
+        // Объяснение запрашиваем только для подтверждённых категорий.
+        if (category != SensitiveContentCategory.CLASSIFICATION_FAILED && category != SensitiveContentCategory.LLM_REFUSED) {
             explanationAsyncService.fetchAndAttachExplanationAsync(saved.getId(), question, category);
         }
         userSensitivityProfileService.recomputeProfile(userId);

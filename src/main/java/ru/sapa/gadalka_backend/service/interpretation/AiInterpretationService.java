@@ -9,7 +9,18 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface AiInterpretationService {
-    InterpretationResult interpret(List<CardDto> cards, String question, String category);
+
+    /**
+     * @param moderationApproved повторная генерация после отказа, не подтверждённого
+     *                           классификатором: в системный промпт добавляется явное
+     *                           указание, что вопрос проверен и отвечать на него нужно.
+     */
+    InterpretationResult interpret(List<CardDto> cards, String question, String category, boolean moderationApproved);
+
+    /** Обычная генерация — без пометки о пройденной модерации. */
+    default InterpretationResult interpret(List<CardDto> cards, String question, String category) {
+        return interpret(cards, question, category, false);
+    }
 
     /**
      * Генерирует текстовую интерпретацию совместимости.
@@ -48,8 +59,11 @@ public interface AiInterpretationService {
     String getProvider();
 
     /**
-     * Классифицирует вопрос по категории чувствительного контента.
-     * Возвращает одно слово — название значения из {@code SensitiveContentCategory}.
+     * Классифицирует вопрос по категории чувствительного контента — вызывается после того,
+     * как генерирующая модель отказалась отвечать, чтобы независимо проверить, была ли
+     * у отказа реальная причина.
+     * Возвращает одно слово — название значения из {@code SensitiveContentCategory},
+     * включая {@code NOT_SENSITIVE}, если тема на самом деле разрешена.
      * Лёгкий вызов: ~200 входных токенов, ~10 выходных.
      */
     String classifySensitiveContent(String question);

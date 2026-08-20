@@ -21,7 +21,7 @@ import java.util.List;
 public class MockAiInterpretationService implements AiInterpretationService {
 
     @Override
-    public InterpretationResult interpret(List<CardDto> cards, String question, String category) {
+    public InterpretationResult interpret(List<CardDto> cards, String question, String category, boolean moderationApproved) {
         String generalInterpretation = "Карты намекают на важные изменения в вашей жизни. Следуйте интуиции.";
 
         List<CardDto> cardsWithInterpretation = cards.stream()

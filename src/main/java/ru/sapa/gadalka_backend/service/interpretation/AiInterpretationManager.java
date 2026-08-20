@@ -16,11 +16,20 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class AiInterpretationManager {
+
     private final Map<String, AiInterpretationService> strategies;
 
     public InterpretationResult interpret(String provider, List<CardDto> cards, String question, String category) {
-        log.debug("Интерпретация расклада таро через провайдер '{}', карт: {}, категория: {}", provider, cards.size(), category);
-        return getService(provider).interpret(cards, question, category);
+        return interpret(provider, cards, question, category, false);
+    }
+
+    /**
+     * @param moderationApproved повторная генерация после отказа, который классификатор
+     *                           не подтвердил реальной запрещённой категорией
+     */
+    public InterpretationResult interpret(String provider, List<CardDto> cards, String question, String category, boolean moderationApproved) {
+        log.debug("Интерпретация расклада таро через провайдер '{}', карт: {}, категория: {}, повтор после отказа: {}", provider, cards.size(), category, moderationApproved);
+        return getService(provider).interpret(cards, question, category, moderationApproved);
     }
 
     public String interpretCompatibility(String provider,

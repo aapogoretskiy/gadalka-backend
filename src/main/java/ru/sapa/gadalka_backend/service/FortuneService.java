@@ -105,22 +105,47 @@ public class FortuneService {
 
         SensitiveContentFilterService.PreCheckResult preCheckResult = preCheckFuture.join();
         if (preCheckResult.isBlocked()) {
-            sensitiveContentFilterService.logLlmDetection(user.getId(), question,
-                    preCheckResult.category(), DetectionSource.LLM_PRECHECK, preCheckResult.rawOutput());
+            sensitiveContentFilterService.logLlmDetection(user.getId(), question, preCheckResult.category(), DetectionSource.LLM_PRECHECK, preCheckResult.rawOutput(), true);
             log.info("LLM pre-check заблокировал вопрос: userId={}, category={}", user.getId(), preCheckResult.category());
             throw new SensitiveContentBlockedException(preCheckResult.category());
         }
 
         InterpretationResult result = unwrapJoin(interpretationFuture);
 
-        // Финальная страховка: если keyword и pre-check всё-таки пропустили вопрос,
-        // а сама генерация интерпретации отказала — тоже не списываем знаки, логируем
+        // Финальная страховка на случай, если keyword и pre-check пропустили вопрос,
+        // а сама генерация отказала.
+        //
+        // Важно: сам по себе отказ генерирующей модели больше НЕ является основанием
+        // для блокировки. Модель отказывается не только на запрещённых темах — право отказать пользователю есть только у классификатора: если он
+        // подтвердил реальную запрещённую тему — блокируем, если нет — даём второй шанс.
         if (sensitiveContentFilterService.isLlmRefusal(result.getGeneralInterpretation())) {
             SensitiveContentCategory sensitiveCategory = sensitiveContentFilterService.classifyByLlm(question);
-            sensitiveContentFilterService.logLlmDetection(user.getId(), question,
-                    sensitiveCategory, DetectionSource.LLM_REFUSAL_FALLBACK, null);
-            log.info("LLM отказал на чувствительный вопрос: userId={}, category={}", user.getId(), sensitiveCategory);
-            throw new SensitiveContentBlockedException(sensitiveCategory);
+
+            if (sensitiveContentFilterService.isConfirmedBlockingCategory(sensitiveCategory)) {
+                sensitiveContentFilterService.logLlmDetection(user.getId(), question, sensitiveCategory, DetectionSource.LLM_REFUSAL_FALLBACK, null, true);
+                log.info("LLM отказал на чувствительный вопрос: userId={}, category={}", user.getId(), sensitiveCategory);
+                throw new SensitiveContentBlockedException(sensitiveCategory);
+            }
+
+            // Отказ не подтверждён — перегенерируем один раз с явным указанием,
+            // что вопрос проверен модерацией.
+            log.info("Отказ генерации не подтверждён классификатором (ответ={}), перегенерируем: userId={}", sensitiveCategory, user.getId());
+            result = interpretationManager.interpret(currentAiProvider, cardDtoList, question, category, true);
+
+            // Вторая попытка тоже отказ блокируем
+            boolean refusedAgain = sensitiveContentFilterService.isLlmRefusal(result.getGeneralInterpretation());
+
+            // Логируем инцидент ОДНОЙ записью и только здесь, когда исход уже известен:
+            // blocked показывает, чем всё кончилось — отдали ответ или отказали.
+            // Категория здесь всегда LLM_REFUSED: реальную тему классификатор не подтвердил,
+            // а NOT_SENSITIVE как причину блокировки записывать бессмысленно.
+            sensitiveContentFilterService.logLlmDetection(user.getId(), question, SensitiveContentCategory.LLM_REFUSED, DetectionSource.LLM_REFUSAL_FALLBACK, null, refusedAgain);
+
+            if (refusedAgain) {
+                log.warn("Повторная генерация тоже закончилась отказом: userId={}", user.getId());
+                throw new SensitiveContentBlockedException(SensitiveContentCategory.LLM_REFUSED);
+            }
+            log.info("Повторная генерация прошла успешно — пользователь получил ответ: userId={}", user.getId());
         }
 
         // Ответ валидный — списываем знаки или квоту (по выбору пользователя).

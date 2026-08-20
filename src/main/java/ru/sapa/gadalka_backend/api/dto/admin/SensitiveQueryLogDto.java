@@ -15,6 +15,8 @@ public record SensitiveQueryLogDto(
         String source,
         String explanation,
         String rawClassificationOutput,
+        /** Была ли реально заблокирована выдача, или случай только зафиксирован для разбора */
+        boolean blocked,
         OffsetDateTime detectedAt
 ) {
     public static SensitiveQueryLogDto from(SensitiveQueryLog log, User user) {
@@ -28,6 +30,7 @@ public record SensitiveQueryLogDto(
                 log.getSource() != null ? log.getSource().name() : null,
                 log.getExplanation(),
                 log.getRawClassificationOutput(),
+                log.isBlocked(),
                 log.getDetectedAt()
         );
     }

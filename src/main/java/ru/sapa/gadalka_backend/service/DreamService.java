@@ -136,7 +136,7 @@ public class DreamService {
         if (preCheckResult.isBlocked()) {
             sensitiveContentFilterService.logLlmDetection(user.getId(),
                     dreamText != null ? dreamText : "[только символы]",
-                    preCheckResult.category(), DetectionSource.LLM_PRECHECK, preCheckResult.rawOutput());
+                    preCheckResult.category(), DetectionSource.LLM_PRECHECK, preCheckResult.rawOutput(), true);
             log.info("LLM pre-check заблокировал сон: userId={}, category={}", user.getId(), preCheckResult.category());
             throw new SensitiveContentBlockedException(preCheckResult.category());
         }
@@ -146,10 +146,13 @@ public class DreamService {
             content = unwrapJoin(interpretationFuture);
         } catch (DreamRefusedException refused) {
             // Финальная страховка: keyword и pre-check пропустили, а сама генерация всё же отказала
-            SensitiveContentCategory category = sensitiveContentFilterService.classifyByLlm(
+            SensitiveContentCategory classified = sensitiveContentFilterService.classifyByLlm(
                     dreamText != null ? dreamText : String.join(", ", symbolInputs.stream().map(DreamContent.SymbolMeaning::name).toList()));
+            SensitiveContentCategory category = sensitiveContentFilterService.isConfirmedBlockingCategory(classified)
+                    ? classified
+                    : SensitiveContentCategory.LLM_REFUSED;
             sensitiveContentFilterService.logLlmDetection(user.getId(),
-                    dreamText != null ? dreamText : "[только символы]", category, DetectionSource.LLM_REFUSAL_FALLBACK, null);
+                    dreamText != null ? dreamText : "[только символы]", category, DetectionSource.LLM_REFUSAL_FALLBACK, null, true);
             log.info("AI отказался разбирать сон: userId={}, category={}", user.getId(), category);
             throw new SensitiveContentBlockedException(category);
         } catch (DreamGenerationException genEx) {

@@ -51,6 +51,24 @@ public class SensitiveQueryLog {
     @Column(name = "explanation", columnDefinition = "TEXT")
     private String explanation;
 
+    /**
+     * Была ли реально заблокирована выдача пользователю.
+     *
+     * <p>До появления этого поля запись в таблице и блокировка означали одно и то же.
+     * Теперь нет: уровень 3 (отказ генерирующей модели) логирует случай, но НЕ блокирует
+     * пользователя, если классификатор не подтвердил реальную запрещённую категорию —
+     * такие записи нужны для настройки промптов, а не как метрика отказов.
+     *
+     * <p>Записи бэкафилла всегда {@code false}: это разметка истории постфактум,
+     * пользователь свой ответ в тот момент получил.
+     *
+     * <p>{@code @Builder.Default} обязателен: без него Lombok игнорирует инициализатор
+     * поля, и через билдер сюда пришёл бы {@code false} вместо {@code true}.
+     */
+    @Builder.Default
+    @Column(name = "blocked", nullable = false)
+    private boolean blocked = true;
+
     @Column(name = "detected_at", nullable = false)
     private OffsetDateTime detectedAt;
 
