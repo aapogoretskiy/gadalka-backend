@@ -19,17 +19,33 @@ import ru.sapa.gadalka_backend.domain.UserProfile;
 import ru.sapa.gadalka_backend.domain.type.NotificationTime;
 import ru.sapa.gadalka_backend.repository.UserProfileRepository;
 import ru.sapa.gadalka_backend.repository.UserRepository;
+import ru.sapa.gadalka_backend.service.notification.NotificationMessage;
+import ru.sapa.gadalka_backend.service.notification.NotificationMessageCatalog;
+import ru.sapa.gadalka_backend.service.notification.NotificationPlaceholderResolver;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Планировщик ежедневных уведомлений в Telegram.
  * Активен только когда telegram.bot.enabled=true (т.е. в prod-среде).
  *
- * <p>Каждый пользователь получает случайно выбранное сообщение из пула.
- * В тексте доступен плейсхолдер {name}, который заменяется на firstName пользователя.
- * Если имя не задано — плейсхолдер убирается.
+ * <p>Что изменилось по сравнению с первой версией:
+ * <ul>
+ *   <li>тексты переехали в {@link NotificationMessageCatalog} и стали структурой:
+ *       у каждого сообщения своя кнопка и свой экран назначения, а не общая
+ *       «Открыть Гадалку» на главную;</li>
+ *   <li>цены не захардкожены — подставляются из БД
+ *       ({@link NotificationPlaceholderResolver});</li>
+ *   <li>сообщение выбирается не случайно, а по детерминированной ротации:
+ *       раньше {@code random} мог выдать одному человеку один и тот же текст
+ *       несколько дней подряд.</li>
+ * </ul>
+ *
+ * <p>Пропорция продающих и атмосферных сообщений — см. {@link #PROMO_EVERY_N_DAYS}.
  */
 @Slf4j
 @Service
@@ -37,60 +53,22 @@ import java.util.concurrent.ThreadLocalRandom;
 @ConditionalOnProperty(name = "telegram.bot.enabled", havingValue = "true")
 public class NotificationSchedulerService {
 
+    /** Часовой пояс, в котором считается «номер дня» для ротации — тот же, что у cron. */
+    private static final ZoneId MOSCOW = ZoneId.of("Europe/Moscow");
+
+    /**
+     * Каждое N-е сообщение для конкретного пользователя — продающее, остальные атмосферные.
+     * Ежедневная продажа выжигает базу: люди перестают открывать сообщения и отписываются.
+     */
+    private static final int PROMO_EVERY_N_DAYS = 3;
+
     private final TelegramClient telegramClient;
     private final UserProfileRepository userProfileRepository;
     private final UserRepository userRepository;
+    private final NotificationPlaceholderResolver placeholderResolver;
 
     @Value("${telegram.bot.app-url}")
     private String appUrl;
-
-    /** Плейсхолдер имени — заменяется на firstName пользователя */
-    private static final String NAME_PLACEHOLDER = "{name}";
-
-    // ── Пулы сообщений ────────────────────────────────────────────────────────
-
-    /**
-     * Утренние сообщения. Из этого списка случайно выбирается одно при каждой рассылке.
-     * {name} заменяется на firstName пользователя (или пустую строку, если имени нет).
-     */
-    private static final List<String> MORNING_MESSAGES = List.of(
-            "🌅 *Доброе утро, {name}!*\n\nКарты уже готовы рассказать, что этот день припас для тебя. Открой расклад и начни день осознанно 🔮",
-            "✨ *{name}, утро — лучшее время для карт!*\n\nПока суета не захлестнула день, задай вопрос и получи ясный ответ 🌿",
-            "🌙 *Карты думали о тебе всю ночь, {name}*\n\nСегодня у тебя особенный день - загляни в расклад и узнай, что готовит судьба 🌟",
-            "🔮 *С добрым утром, {name}!*\n\nТри карты могут изменить всё. Один вопрос - один ответ - один шаг вперёд. Попробуй прямо сейчас 💫",
-            "🌸 *Новый день, новые возможности, {name}*\n\nКарты Таро помогут выбрать верный путь. Твой ежедневный расклад ждёт тебя ✨",
-            "🌞 *{name}, удача любит тех, кто готов*\n\nНачни утро с карты дня — она подскажет, на что обратить внимание сегодня 🌙",
-            "💎 *Доброе утро! Карты ждут тебя, {name}*\n\nПосмотри, что вселенная хочет сказать тебе прямо сейчас — открой расклад 🔮",
-            "🔢 *{name}, цифры знают о тебе всё*\n\nТвоё число дня подскажет, как использовать энергию этих часов. Узнай прямо сейчас ✨",
-            "💫 *Доброе утро, {name}!*\n\nСегодня вселенная расставила звёзды особым образом именно для тебя. Открой расклад и не упусти свой момент 🌙",
-            "🌺 *{name}, твоё утро начинается с выбора*\n\nКарта дня поможет понять, куда направить силы. Один знак — и путь становится яснее 🔮",
-            "⚡ *{name}, энергия утра — самая чистая*\n\nЗадай вопрос, пока ум свеж и открыт. Карты дадут самый честный ответ 💎",
-            "🌿 *Каждое утро — чистый лист, {name}*\n\nЧто ты хочешь написать на нём сегодня? Таро поможет выбрать слова ✨",
-            "🦋 *{name}, судьба любит подготовленных*\n\nОдин расклад с утра — и ты знаешь, чего ожидать. Загляни в карты прямо сейчас 🌸",
-            "🌊 *Новый день — новая волна возможностей, {name}*\n\nПосмотри, что принесёт этот прилив. Карты расскажут 🔮",
-            "🧿 *{name}, защити свой день с утра*\n\nРасклад покажет, на что обратить внимание и где быть осторожным. Открой сейчас 💫"
-    );
-
-    /**
-     * Вечерние сообщения.
-     */
-    private static final List<String> EVENING_MESSAGES = List.of(
-            "🌙 *Вечер — время для тайн, {name}*\n\nРасскажи картам, что у тебя на уме, и получи честный ответ перед сном 🔮",
-            "✨ *{name}, как прошёл твой день?*\n\nКарты готовы осмыслить его вместе с тобой и подсказать, что ждёт завтра 🌟",
-            "🌛 *Вечер подходит для глубоких вопросов, {name}*\n\nОткрой расклад — пусть карты озарят то, что скрыто за суетой дня 💫",
-            "🕯️ *Тихий вечер, честные карты, {name}*\n\nЗадай вопрос, который беспокоит тебя, и узнай ответ прямо сейчас ✨",
-            "🌌 *Звёзды и карты работают ночью, {name}*\n\nСамое время заглянуть в будущее — твой вечерний расклад готов 🔮",
-            "🌙 *{name}, не ложись спать с вопросами*\n\nКарты дадут ответ и освободят разум от тревог. Попробуй прямо сейчас 🌿",
-            "🌠 *Вечер — портал в понимание, {name}*\n\nТаро поможет увидеть день с другой стороны. Один расклад — и всё станет яснее 💎",
-            "🔢 *{name}, число этого дня говорит с тобой*\n\nНумерология поможет понять, что сегодня случилось не случайно. Узнай значение ✨",
-            "💑 *{name}, вечер — время для сердечных вопросов*\n\nПроверь совместимость, разберись в отношениях. Карты скажут то, что сложно сказать словами 🌹",
-            "🌃 *Ночной город спит, а карты нет, {name}*\n\nСамое время для важных вопросов. Что беспокоит тебя? Открой расклад 🔮",
-            "🕰️ *{name}, подведи итог дня с Таро*\n\nЧто было знаком? Что — случайностью? Карты помогут разобраться 💫",
-            "🌺 *Вечер создан для откровений, {name}*\n\nОткрой то, что скрыто за событиями дня. Один расклад — и многое встанет на место ✨",
-            "🌜 *{name}, луна видит больше, чем солнце*\n\nВечерние карты открывают то, что днём не замечаешь. Загляни в расклад 🌙",
-            "🔥 *{name}, не оставляй вопросы на завтра*\n\nКарты готовы ответить прямо сейчас. Один расклад — и станет легче 💎",
-            "🪬 *{name}, завтра начинается сегодня ночью*\n\nУзнай, что готовит новый день — карты уже видят завтрашний путь 🔮"
-    );
 
     // ── Расписание ────────────────────────────────────────────────────────────
 
@@ -101,7 +79,7 @@ public class NotificationSchedulerService {
     @Scheduled(cron = "0 0 9 * * *", zone = "Europe/Moscow")
     public void sendMorningNotifications() {
         log.info("Запуск утренней рассылки уведомлений");
-        sendNotifications(NotificationTime.MORNING, MORNING_MESSAGES);
+        sendNotifications(NotificationTime.MORNING, NotificationMessage.Slot.MORNING);
     }
 
     /**
@@ -110,29 +88,62 @@ public class NotificationSchedulerService {
     @Scheduled(cron = "0 0 20 * * *", zone = "Europe/Moscow")
     public void sendEveningNotifications() {
         log.info("Запуск вечерней рассылки уведомлений");
-        sendNotifications(NotificationTime.EVENING, EVENING_MESSAGES);
+        sendNotifications(NotificationTime.EVENING, NotificationMessage.Slot.EVENING);
     }
 
     // ── Логика отправки ───────────────────────────────────────────────────────
 
-    private void sendNotifications(NotificationTime notificationTime, List<String> messagePool) {
+    private void sendNotifications(NotificationTime notificationTime, NotificationMessage.Slot slot) {
         List<UserProfile> profiles = userProfileRepository.findByNotificationTime(notificationTime);
         log.info("Найдено {} пользователей для рассылки ({})", profiles.size(), notificationTime);
+        if (profiles.isEmpty()) {
+            return;
+        }
+
+        // Снимок цен собираем один раз на всю рассылку, а не на каждого получателя
+        Map<String, String> placeholders = placeholderResolver.snapshot();
+        List<NotificationMessage> promoPool = NotificationMessageCatalog.forSlot(
+                NotificationMessageCatalog.PROMO, slot);
+        List<NotificationMessage> ambientPool = NotificationMessageCatalog.forSlot(
+                NotificationMessageCatalog.AMBIENT, slot);
+
+        long dayNumber = LocalDate.now(MOSCOW).toEpochDay();
 
         int successCount = 0;
         int errorCount = 0;
+        int skippedCount = 0;
+        int promoCount = 0;
 
         for (UserProfile profile : profiles) {
             User user = profile.getUser();
             Long telegramId = user.getTelegramId();
-            // Персонализация: заменяем {name} на имя пользователя (или пустую строку)
-            String firstName = StringUtils.defaultString(user.getFirstName(), "");
-            String messageText = pickRandom(messagePool)
-                    .replace(NAME_PLACEHOLDER, firstName)
-                    .trim();
+            long rotationKey = user.getId() + dayNumber;
+
+            boolean promoTurn = Math.floorMod(rotationKey, PROMO_EVERY_N_DAYS) == 0;
+            // Счётчики пулов считаем отдельно, иначе часть текстов не показалась бы
+            // никогда: продающие идут раз в три дня, и если размер пула кратен трём,
+            // «шаг 3» гоняет пользователя по одной и той же трети списка.
+            long promoIndex = Math.floorDiv(rotationKey, PROMO_EVERY_N_DAYS);
+            long ambientIndex = rotationKey - promoIndex;
+
+            Optional<Prepared> prepared = promoTurn
+                    ? pick(promoPool, promoIndex, placeholders, user)
+                    : pick(ambientPool, ambientIndex, placeholders, user);
+            if (prepared.isEmpty() && promoTurn) {
+                // Все продающие тексты этого слота оказались неотправляемыми
+                // (например, подписки выключены) — уходим в атмосферный пул
+                prepared = pick(ambientPool, ambientIndex, placeholders, user);
+            }
+            if (prepared.isEmpty()) {
+                skippedCount++;
+                continue;
+            }
+            if (promoTurn) {
+                promoCount++;
+            }
 
             try {
-                sendNotificationMessage(telegramId, messageText);
+                send(telegramId, prepared.get());
                 successCount++;
                 markReachable(user, true);
             } catch (TelegramApiException e) {
@@ -147,12 +158,75 @@ public class NotificationSchedulerService {
             }
         }
 
-        log.info("Рассылка {} завершена: успешно={}, ошибок={}", notificationTime, successCount, errorCount);
+        log.info("Рассылка {} завершена: успешно={} (из них продающих={}), ошибок={}, пропущено={}",
+                notificationTime, successCount, promoCount, errorCount, skippedCount);
     }
 
-    /** Выбирает случайный элемент из пула сообщений */
-    private String pickRandom(List<String> pool) {
-        return pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+    /**
+     * Выбирает сообщение из пула для конкретного пользователя.
+     *
+     * <p>Вместо случайного выбора — детерминированная ротация: индекс считается
+     * от id пользователя и номера дня, поэтому каждый идёт по пулу своим циклом,
+     * внутри цикла текст не повторяется, и хранить историю отправок не нужно.
+     *
+     * <p>Если у выбранного сообщения не раскрылись плейсхолдеры (цену не удалось
+     * получить из БД), берётся следующее по кругу — но не более чем размер пула,
+     * чтобы не зациклиться.
+     */
+    private Optional<Prepared> pick(List<NotificationMessage> pool, long poolIndex,
+                                    Map<String, String> placeholders, User user) {
+        if (pool.isEmpty()) {
+            return Optional.empty();
+        }
+        int start = (int) Math.floorMod(poolIndex, pool.size());
+        for (int offset = 0; offset < pool.size(); offset++) {
+            NotificationMessage candidate = pool.get((start + offset) % pool.size());
+            Optional<Prepared> prepared = prepare(candidate, placeholders, user);
+            if (prepared.isPresent()) {
+                return prepared;
+            }
+        }
+        log.warn("Ни одно сообщение пула не удалось подготовить к отправке (размер пула={})", pool.size());
+        return Optional.empty();
+    }
+
+    /** Раскрывает цены и имя в тексте и в подписи кнопки, собирает ссылку кнопки. */
+    private Optional<Prepared> prepare(NotificationMessage message, Map<String, String> placeholders, User user) {
+        Optional<String> text = NotificationPlaceholderResolver.apply(message.text(), placeholders);
+        Optional<String> button = NotificationPlaceholderResolver.apply(message.buttonText(), placeholders);
+        if (text.isEmpty() || button.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String firstName = StringUtils.defaultString(user.getFirstName(), "");
+        String personalizedText = text.get()
+                .replace(NotificationPlaceholderResolver.NAME_PLACEHOLDER, firstName)
+                .trim();
+
+        return Optional.of(new Prepared(
+                personalizedText,
+                button.get(),
+                message.target().buildUrl(appUrl)));
+    }
+
+    private void send(Long chatId, Prepared prepared) throws TelegramApiException {
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text(prepared.buttonText())
+                .webApp(new WebAppInfo(prepared.url()))
+                .build();
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(new InlineKeyboardRow(button)))
+                .build();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(prepared.text())
+                .parseMode("Markdown")
+                .replyMarkup(keyboard)
+                .build();
+
+        telegramClient.execute(message);
     }
 
     /**
@@ -171,23 +245,7 @@ public class NotificationSchedulerService {
         return errorMessage.contains("chat not found") || errorMessage.contains("bot was blocked");
     }
 
-    private void sendNotificationMessage(Long chatId, String text) throws TelegramApiException {
-        InlineKeyboardButton button = InlineKeyboardButton.builder()
-                .text("🔮 Открыть Гадалку")
-                .webApp(new WebAppInfo(appUrl))
-                .build();
-
-        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
-                .keyboard(List.of(new InlineKeyboardRow(button)))
-                .build();
-
-        SendMessage message = SendMessage.builder()
-                .chatId(chatId)
-                .text(text)
-                .parseMode("Markdown")
-                .replyMarkup(keyboard)
-                .build();
-
-        telegramClient.execute(message);
+    /** Готовое к отправке сообщение: текст, подпись кнопки и её ссылка. */
+    private record Prepared(String text, String buttonText, String url) {
     }
 }
